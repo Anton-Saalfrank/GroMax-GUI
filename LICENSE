@@ -1,0 +1,56 @@
+================================================================================
+  PLACEHOLDER — NOT YET THE FINAL LICENCE. DO NOT PUBLISH WITH THIS HEADER.
+================================================================================
+
+  This file is a scaffold. Before making the repository public or depositing
+  it on Zenodo, confirm BOTH of the following and then delete this header:
+
+  1. WHO HOLDS THE COPYRIGHT.
+     Per the University of Bristol's guidance, software written by a member of
+     staff as part of their work — or using University equipment — is owned by
+     the University, regardless of whether it was written in work hours.
+     Students (including PhD students) normally own their own copyright unless
+     funding terms say otherwise or the work derives from staff-developed code.
+     Only the copyright holder may choose the licence.
+
+  2. WHETHER A GRANT ALREADY DICTATES THE LICENCE.
+     Grants commonly contain a promise to release under an open-source licence,
+     sometimes a specific one. That promise is contractual and overrides
+     preference.
+
+  Contacts:
+     ask-rse@bristol.ac.uk   — ACRC Research Software Engineering team
+     RED (Research & Enterprise Development) — Open Source Software Licensing FAQ
+     https://www.bristol.ac.uk/acrc/research-software-engineering/software-howtos/how-to-license-software/
+
+  The MIT text below is the LIKELY choice for a GROMACS-adjacent analysis tool
+  (permissive, standard in the field, imposes no constraint on users), but it
+  is UNCONFIRMED. Replace <YEAR> and <COPYRIGHT HOLDER> once decided.
+
+  Note on GROMACS: GroMax invokes `gmx` as an external subprocess and does not
+  link against GROMACS libraries, so GROMACS's LGPL does not propagate to this
+  code and does not constrain the licence choice. State this in the README.
+
+================================================================================
+
+MIT License
+
+Copyright (c) <YEAR> <COPYRIGHT HOLDER>
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.

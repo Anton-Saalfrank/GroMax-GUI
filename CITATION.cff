@@ -1,0 +1,58 @@
+# Citation metadata.
+#
+# GitHub renders its "Cite this repository" button from this file.
+#
+# IMPORTANT: Zenodo does NOT read this file while .zenodo.json exists — if both
+# are present the Zenodo agent uses .zenodo.json and ignores CITATION.cff
+# entirely. Keep the two in step by hand, or delete .zenodo.json if you would
+# rather Zenodo read this one.
+#
+# The `license` field below is for GitHub/other consumers. Zenodo derives the
+# licence from the LICENSE file itself, so LICENSE is the single source of
+# truth — make sure all three agree once the licence is confirmed.
+#
+# PLACEHOLDERS marked TODO must be filled in before publishing.
+cff-version: 1.2.0
+title: "GroMax GUI"
+message: "If you use this software, please cite it using the metadata from this file."
+type: software
+version: 1.0.0
+date-released: "TODO-YYYY-MM-DD"
+
+abstract: >-
+  A desktop GUI for GROMACS trajectory analysis. Scans folders of simulations,
+  auto-pairs replicas, runs analyses (RMSD, RMSF, radius of gyration, SASA,
+  hydrogen bonds, minimum distance, 2D-RMSD, DSSP secondary structure and
+  shared-basis PCA) across experimental conditions, and compares the results in
+  interactive, publication-styled plots. Includes multi-chain system mapping so
+  residues can be selected by biological identity rather than GROMACS' flat
+  internal numbering.
+
+authors:
+  - family-names: "TODO-Surname"
+    given-names: "TODO-Forename"
+    affiliation: "School of TODO, Faculty of Life Sciences, University of Bristol"
+    orcid: "https://orcid.org/TODO-0000-0000-0000-0000"
+  # Add further authors here. Zenodo maps these to record creators.
+
+# TODO: confirm with RED / ask-rse@bristol.ac.uk before publishing.
+# Must match the LICENSE file. SPDX identifier, e.g. MIT, BSD-3-Clause, GPL-3.0.
+license: "TODO-MIT"
+
+repository-code: "https://github.com/TODO-org/TODO-repo"
+
+keywords:
+  - molecular dynamics
+  - GROMACS
+  - trajectory analysis
+  - principal component analysis
+  - structural biology
+  - graphical user interface
+
+references:
+  - type: software
+    title: "GROMACS"
+    notes: >-
+      GroMax invokes the GROMACS command-line tools as external subprocesses.
+      Cite the GROMACS version actually used for your analyses.
+    url: "https://www.gromacs.org/"

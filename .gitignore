@@ -1,0 +1,19 @@
+node_modules/
+dist/
+dist-electron/
+__pycache__/
+*.pyc
+.env
+.DS_Store
+*.egg-info/
+dist-backend/
+build-backend/
+*.spec.bak
+.venv/
+venv/
+
+# Local scratch kept on disk but out of the repo. Neither is referenced by
+# package.json, README.md or any script; page.html also has an absolute home
+# path baked into it, which would be in the history for good once committed.
+/main.cjs
+/page.html

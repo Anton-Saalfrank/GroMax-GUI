@@ -1,0 +1,47 @@
+{
+  "_comment": [
+    "AUTHORITATIVE metadata for the Zenodo record. Read this before editing:",
+    "",
+    "1. If BOTH .zenodo.json and CITATION.cff exist, the Zenodo agent uses this",
+    "   file and IGNORES CITATION.cff COMPLETELY. CITATION.cff is still worth",
+    "   keeping \u2014 GitHub renders its 'Cite this repository' button from it \u2014 but",
+    "   the two must be kept in step by hand, because Zenodo will not read it.",
+    "",
+    "2. NO 'license' KEY HERE ON PURPOSE. Zenodo reads the LICENSE file in the",
+    "   repository root and generates the licence metadata from it (overriding",
+    "   its CC-BY-4.0 default). Declaring it in both places invites them to",
+    "   disagree. Set the licence ONCE, in LICENSE.",
+    "",
+    "3. Only put information here that stays CONSISTENT ACROSS RELEASES.",
+    "   Version comes from the git tag, not from this file.",
+    "",
+    "TODO items below must be filled in before publishing. Delete this _comment",
+    "key when finalising."
+  ],
+  "title": "GroMax GUI: a desktop interface for comparative GROMACS trajectory analysis",
+  "description": "<p>A desktop GUI for GROMACS trajectory analysis. Scans folders of simulations, auto-pairs replicas, runs analyses (RMSD, RMSF, radius of gyration, SASA, hydrogen bonds, minimum distance, 2D-RMSD, DSSP secondary structure and shared-basis PCA) across experimental conditions, and compares results in interactive, publication-styled plots.</p><p>Includes multi-chain system mapping so residues can be selected by biological identity (chain + full-length residue number) rather than GROMACS' flat internal numbering, and shared-basis PCA so principal components are directly comparable between conditions.</p>",
+  "upload_type": "software",
+  "access_right": "open",
+  "creators": [
+    {
+      "name": "TODO-Surname, TODO-Forename",
+      "affiliation": "University of Bristol",
+      "orcid": "TODO-0000-0000-0000-0000"
+    }
+  ],
+  "keywords": [
+    "molecular dynamics",
+    "GROMACS",
+    "trajectory analysis",
+    "principal component analysis",
+    "structural biology",
+    "graphical user interface"
+  ],
+  "related_identifiers": [
+    {
+      "identifier": "https://www.gromacs.org/",
+      "relation": "requires",
+      "scheme": "url"
+    }
+  ]
+}

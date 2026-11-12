@@ -1,0 +1,159 @@
+<!doctype html><html><head><meta charset="utf-8"></head>
+<body style="margin:0"><div id="v" style="width:600px;height:600px"></div>
+<script type="importmap">{"imports":{"three":"../../node_modules/three/build/three.module.js"}}</script>
+<script src="../../node_modules/ngl/dist/ngl.js"></script>
+<script type="module">
+import { Raycaster, Vector2, Vector3, Matrix4 } from 'three'
+const PDB = "ATOM      1  N   ALA A   1       3.200   0.000   0.000  1.00  0.00           N\nATOM      2  CA  ALA A   1       4.660   0.000   0.000  1.00  0.00           C\nATOM      3  C   ALA A   1       5.200   1.400   0.000  1.00  0.00           C\nATOM      4  O   ALA A   1       4.500   2.400   0.000  1.00  0.00           O\nATOM      5  CB  ALA A   1       5.200  -0.800   1.200  1.00  0.00           C\nATOM      6  N   ALA A   2       6.400   0.000   0.000  1.00  0.00           N\nATOM      7  CA  ALA A   2       7.860   0.000   0.000  1.00  0.00           C\nATOM      8  C   ALA A   2       8.400   1.400   0.000  1.00  0.00           C\nATOM      9  O   ALA A   2       7.700   2.400   0.000  1.00  0.00           O\nATOM     10  CB  ALA A   2       8.400  -0.800   1.200  1.00  0.00           C\nATOM     11  N   ALA A   3       9.600   0.000   0.000  1.00  0.00           N\nATOM     12  CA  ALA A   3      11.060   0.000   0.000  1.00  0.00           C\nATOM     13  C   ALA A   3      11.600   1.400   0.000  1.00  0.00           C\nATOM     14  O   ALA A   3      10.900   2.400   0.000  1.00  0.00           O\nATOM     15  CB  ALA A   3      11.600  -0.800   1.200  1.00  0.00           C\nATOM     16  N   ALA A   4      12.800   0.000   0.000  1.00  0.00           N\nATOM     17  CA  ALA A   4      14.260   0.000   0.000  1.00  0.00           C\nATOM     18  C   ALA A   4      14.800   1.400   0.000  1.00  0.00           C\nATOM     19  O   ALA A   4      14.100   2.400   0.000  1.00  0.00           O\nATOM     20  CB  ALA A   4      14.800  -0.800   1.200  1.00  0.00           C\nATOM     21  N   ALA A   5      16.000   0.000   0.000  1.00  0.00           N\nATOM     22  CA  ALA A   5      17.460   0.000   0.000  1.00  0.00           C\nATOM     23  C   ALA A   5      18.000   1.400   0.000  1.00  0.00           C\nATOM     24  O   ALA A   5      17.300   2.400   0.000  1.00  0.00           O\nATOM     25  CB  ALA A   5      18.000  -0.800   1.200  1.00  0.00           C\nATOM     26  N   ALA A   6      19.200   0.000   0.000  1.00  0.00           N\nATOM     27  CA  ALA A   6      20.660   0.000   0.000  1.00  0.00           C\nATOM     28  C   ALA A   6      21.200   1.400   0.000  1.00  0.00           C\nATOM     29  O   ALA A   6      20.500   2.400   0.000  1.00  0.00           O\nATOM     30  CB  ALA A   6      21.200  -0.800   1.200  1.00  0.00           C\nTER\nEND\n"
+const out = m => { window.__result = m }
+
+/* The same method as src/lib/surfacePick.ts. Kept in step by hand: this file
+   runs in a bare page with no bundler, so it cannot import the app's module.
+
+   Both routes to an atom are computed here, so the test can compare them:
+   the atom the clicked TRIANGLE was built from (what the surface is coloured
+   by, and what the app now selects) and the nearest atom CENTRE (what it used
+   to select). */
+
+/* Per-vertex atom indices of the drawn molecular surface, if NGL still exposes
+   them where the app looks. This is the contract the fix rests on. */
+function surfaceAtomIndex(comp) {
+  for (const el of comp.reprList || []) {
+    const infos = el && el.repr && el.repr.__infoList
+    if (!Array.isArray(infos)) continue
+    for (const info of infos) {
+      const surf = info && info.surface
+      if (surf && surf.atomindex && surf.position) {
+        return { verts: surf.position.length / 3, atomindex: surf.atomindex }
+      }
+    }
+  }
+  return null
+}
+
+function atomAtCanvasPoint(stage, comp, x, y, maxDistance = 6) {
+  const viewer = stage.viewer, canvas = viewer.renderer.domElement
+  const dpr = window.devicePixelRatio || 1
+  const W = canvas.width / dpr, H = canvas.height / dpr
+  const ndc = new Vector2((x / W) * 2 - 1, -((y / H) * 2 - 1))
+  const rc = new Raycaster()
+  rc.setFromCamera(ndc, viewer.camera)
+  const hit = rc.intersectObjects(viewer.scene.children, true)
+                .find(h => h.object && h.object.visible && h.object.geometry)
+  if (!hit) return null
+  const local = new Vector3().copy(hit.point)
+    .applyMatrix4(new Matrix4().copy(hit.object.matrixWorld).invert())
+  const hash = comp.structure.spatialHash
+  const ap = comp.structure.getAtomProxy()
+  const name = i => { ap.index = i; return ap.resname + ap.resno + '.' + ap.atomname }
+  const distTo = i => {
+    ap.index = i
+    return Math.hypot(ap.x - local.x, ap.y - local.y, ap.z - local.z)
+  }
+
+  // The triangle's own atom.
+  let owner = null
+  const si = surfaceAtomIndex(comp)
+  const pos = hit.object.geometry.attributes && hit.object.geometry.attributes.position
+  if (si && hit.face && pos && pos.count === si.verts) {
+    let bv = -1, bvd = Infinity
+    for (const v of [hit.face.a, hit.face.b, hit.face.c]) {
+      const d = Math.hypot(pos.getX(v) - local.x, pos.getY(v) - local.y,
+                           pos.getZ(v) - local.z)
+      if (d < bvd) { bvd = d; bv = v }
+    }
+    const a = bv >= 0 ? si.atomindex[bv] : -1
+    if (a >= 0 && a < comp.structure.atomCount) owner = a
+  }
+
+  // The nearest atom centre.
+  let best = -1, bestD = Infinity
+  for (const r of [3, 5, 8, maxDistance]) {
+    if (r > maxDistance) break
+    const near = hash.within(local.x, local.y, local.z, r)
+    if (!near || !near.length) continue
+    for (const i of near) {
+      const d = distTo(i)
+      if (d < bestD) { bestD = d; best = i }
+    }
+    if (best >= 0) break
+  }
+
+  const picked = owner !== null ? owner : best
+  if (picked < 0) return null
+  const d = distTo(picked)
+  if (owner === null && d > maxDistance) return null
+  ap.index = picked
+  return { atom: ap.atomname, res: ap.resname + ap.resno, dist: +d.toFixed(2),
+           via: owner !== null ? 'surface' : 'nearest',
+           agrees: best < 0 || picked === best,
+           nearest: best >= 0 ? name(best) : null }
+}
+
+function drawnFraction(stage) {
+  const cv = stage.viewer.renderer.domElement
+  const gl = stage.viewer.renderer.getContext()
+  const px = new Uint8Array(cv.width * cv.height * 4)
+  stage.viewer.render()
+  gl.readPixels(0, 0, cv.width, cv.height, gl.RGBA, gl.UNSIGNED_BYTE, px)
+  let n = 0
+  for (let i = 0; i < px.length; i += 4)
+    if (px[i] < 240 || px[i + 1] < 240 || px[i + 2] < 240) n++
+  return +(n / (cv.width * cv.height)).toFixed(3)
+}
+
+async function trial(stage, comp, repType, waitMs) {
+  comp.removeAllRepresentations()
+  comp.addRepresentation(repType, { name: 'main' })
+  comp.autoView()
+  await new Promise(r => setTimeout(r, waitMs))
+  const cv = stage.viewer.renderer.domElement
+  const dpr = window.devicePixelRatio || 1
+  const W = cv.width / dpr, H = cv.height / dpr
+  let probes = 0, nglPicks = 0, withAtom = 0, rayHits = 0, sample = null
+  let viaSurface = 0, disagree = 0
+  const dists = []
+  for (let i = 3; i <= 7; i++) for (let j = 3; j <= 7; j++) {
+    const px = Math.round(W * i / 10), py = Math.round(H * j / 10)
+    probes++
+    const p = stage.pickingControls.pick(px, py)
+    if (p) { nglPicks++; if (p.atom) withAtom++ }
+    const r = atomAtCanvasPoint(stage, comp, px, py)
+    if (r) {
+      rayHits++; dists.push(r.dist); sample = sample || r
+      if (r.via === 'surface') viaSurface++
+      if (!r.agrees) disagree++
+    }
+  }
+  dists.sort((a, b) => a - b)
+  const si = surfaceAtomIndex(comp)
+  let meshMatches = false, outOfRange = 0
+  if (si) {
+    stage.viewer.scene.traverse(o => {
+      const a = o.geometry && o.geometry.attributes && o.geometry.attributes.position
+      if (o.visible && a && a.count === si.verts) meshMatches = true
+    })
+    for (let k = 0; k < si.atomindex.length; k++) {
+      const v = si.atomindex[k]
+      if (v < 0 || v >= comp.structure.atomCount) outOfRange++
+    }
+  }
+  return { rep: repType, probes, nglPicks, withAtom, rayHits, sample,
+           medianDist: dists.length ? dists[Math.floor(dists.length / 2)] : null,
+           maxDist: dists.length ? dists[dists.length - 1] : null,
+           drawn: drawnFraction(stage),
+           viaSurface, disagree,
+           atomIndex: si ? { verts: si.verts, len: si.atomindex.length,
+                             meshMatches, outOfRange } : null }
+}
+
+;(async () => {
+  try {
+    const stage = new NGL.Stage('v', { backgroundColor: 'white' })
+    const comp = await stage.loadFile(new Blob([PDB], { type: 'text/plain' }), { ext: 'pdb' })
+    const spacefill = await trial(stage, comp, 'spacefill', 1500)
+    const surface = await trial(stage, comp, 'surface', 6000)
+    out({ ngl: NGL.Version, spacefill, surface })
+  } catch (e) { out({ error: String((e && e.stack) || e) }) }
+})()
+</script></body></html>

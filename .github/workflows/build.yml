@@ -1,0 +1,117 @@
+name: Build & Release
+
+# PyInstaller cannot cross-compile, so each platform's backend must be frozen
+# on that platform. This matrix produces all three, and attaches them to a
+# GitHub release — which is also what triggers the Zenodo archive once the
+# repo/Zenodo integration is enabled.
+
+# The verify job runs on every push and PR; the build/release jobs only on a
+# tag. verify.sh exists because broken builds shipped twice, and running it for
+# the first time at release was leaving the whole point of it on the table.
+on:
+  push:
+    branches: ["main", "master"]
+    tags: ["v*"]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  verify:
+    name: Verify (typecheck, tests, lint)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: "20", cache: "npm" }
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.11" }
+      - run: npm ci
+      - run: pip install -r backend/requirements.txt
+      - name: Run verify.sh
+        run: bash verify.sh
+
+  build:
+    name: Build ${{ matrix.os }}
+    needs: verify
+    # Packaging all three platforms on every commit would be minutes of CI for
+    # artefacts nobody downloads. Tags and manual runs only.
+    if: startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch'
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-latest, ubuntu-latest, windows-latest]
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with: { node-version: "20", cache: "npm" }
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.11" }
+
+      - name: Install dependencies
+        run: |
+          npm ci
+          pip install -r backend/requirements.txt pyinstaller
+
+      - name: Build frontend
+        run: npx vite build
+
+      - name: Freeze backend
+        run: pyinstaller backend/gromax-backend.spec --distpath dist-backend --workpath build-backend --noconfirm
+
+      - name: Smoke-test the frozen backend
+        shell: bash
+        run: |
+          # A frozen binary that can't start is the classic PyInstaller failure
+          # (missing hidden import). Catch it here, not in a user's hands.
+          if [ "$RUNNER_OS" = "Windows" ]; then
+            EXE="dist-backend/gromax-backend/gromax-backend.exe"
+          else
+            EXE="dist-backend/gromax-backend/gromax-backend"
+          fi
+          "$EXE" --port 7999 &
+          PID=$!
+          for i in $(seq 1 30); do
+            if curl -sf http://127.0.0.1:7999/health > /dev/null; then
+              echo "Backend healthy:"; curl -s http://127.0.0.1:7999/health; echo
+              kill $PID || true
+              exit 0
+            fi
+            sleep 1
+          done
+          echo "Frozen backend failed to become healthy"; kill $PID || true; exit 1
+
+      - name: Package with electron-builder
+        run: npx electron-builder --publish never
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # To sign macOS builds, add CSC_LINK and CSC_KEY_PASSWORD secrets.
+          # Unsigned builds are blocked by Gatekeeper on other machines.
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: gromax-${{ matrix.os }}
+          path: |
+            dist-electron/*.dmg
+            dist-electron/*.AppImage
+            dist-electron/*.exe
+            dist-electron/*.zip
+          if-no-files-found: warn
+
+  release:
+    name: Attach to release
+    needs: build
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with: { path: artifacts }
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: artifacts/**/*
+          generate_release_notes: true
+      # Once the GitHub–Zenodo integration is enabled for this repo, publishing
+      # this release is what triggers Zenodo to archive it and mint a DOI.

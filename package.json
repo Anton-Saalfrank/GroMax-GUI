@@ -1,0 +1,81 @@
+{
+  "name": "gromax-gui",
+  "version": "1.0.0",
+  "description": "GROMACS trajectory analysis GUI",
+  "main": "electron/main.js",
+  "scripts": {
+    "dev": "concurrently \"npm run vite\" \"npm run electron:dev\"",
+    "vite": "vite",
+    "electron:dev": "wait-on http://localhost:5173 && electron .",
+    "build": "vite build && npm run backend:freeze && electron-builder",
+    "preview": "vite preview",
+    "backend:freeze": "pyinstaller backend/gromax-backend.spec --distpath dist-backend --workpath build-backend --noconfirm",
+    "build:nofreeze": "vite build && electron-builder",
+    "lint": "eslint .",
+    "verify": "bash verify.sh"
+  },
+  "dependencies": {
+    "@fontsource/inter": "^5.3.0",
+    "@fontsource/jetbrains-mono": "^5.3.0",
+    "lucide-react": "^0.383.0",
+    "ngl": "^2.3.1",
+    "plotly.js": "^2.30.0",
+    "react": "^18.3.0",
+    "react-dom": "^18.3.0",
+    "react-plotly.js": "^2.6.0",
+    "zustand": "^4.5.0"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.15.0",
+    "@types/react": "^18.3.0",
+    "@types/react-dom": "^18.3.0",
+    "@vitejs/plugin-react": "^4.3.0",
+    "concurrently": "^8.2.0",
+    "electron": "^30.0.0",
+    "electron-builder": "^24.13.0",
+    "eslint": "^9.15.0",
+    "eslint-plugin-react-hooks": "^5.0.0",
+    "globals": "^15.12.0",
+    "typescript": "^5.4.0",
+    "typescript-eslint": "^8.15.0",
+    "vite": "^5.2.0",
+    "wait-on": "^7.2.0"
+  },
+  "build": {
+    "appId": "com.gromax.gui",
+    "productName": "GroMax GUI",
+    "directories": {
+      "output": "dist-electron"
+    },
+    "files": [
+      "dist/**/*",
+      "electron/**/*",
+      "!**/__pycache__/**"
+    ],
+    "extraResources": [
+      {
+        "from": "dist-backend/gromax-backend",
+        "to": "backend",
+        "filter": [
+          "**/*"
+        ]
+      }
+    ],
+    "mac": {
+      "category": "public.app-category.science",
+      "target": [
+        "dmg",
+        "zip"
+      ],
+      "hardenedRuntime": true,
+      "gatekeeperAssess": false
+    },
+    "linux": {
+      "target": "AppImage",
+      "category": "Science"
+    },
+    "win": {
+      "target": "nsis"
+    }
+  }
+}

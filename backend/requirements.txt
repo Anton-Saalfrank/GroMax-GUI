@@ -1,0 +1,15 @@
+# Minimum versions — unpinned upper bound so pip picks prebuilt wheels
+# for your Python version (avoids compiling pydantic-core from Rust source).
+fastapi>=0.111
+uvicorn[standard]>=0.29
+pydantic>=2.9
+pydantic-settings>=2.4
+python-multipart>=0.0.9
+numpy>=1.26
+# Hard requirement, not optional: core/cavity.py and core/structure.py
+# import cKDTree and ndimage inside the cavity functions. A lazy import
+# hid this — setup.sh installs this file, so a fresh install had a cavity
+# feature that raised ModuleNotFoundError the first time it was clicked,
+# and CI would have failed on test_cavity.py for the same reason.
+scipy>=1.11
+pyflakes>=3.0  # static undefined-name check used by verify.sh

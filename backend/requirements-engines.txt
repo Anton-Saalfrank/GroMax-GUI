@@ -1,0 +1,29 @@
+# Optional analysis engines.
+#
+# NONE of these are needed to run GroMax — the GROMACS engine covers everything
+# the app did before, and an engine that is missing simply shows up greyed out
+# in the Analyses tab with the command to install it. They are listed here so
+# "install the extra engines" is one command rather than a hunt.
+#
+# INSTALL INTO THE BACKEND'S OWN PYTHON. This is the single most common way
+# this goes wrong: the app launches the backend with whatever `python3` it
+# finds, which on a workstation set up for simulation is usually a conda
+# environment rather than the system Python. Activate that environment first:
+#
+#     conda activate <your-gromacs-env>
+#     pip install -r backend/requirements-engines.txt
+#
+# The Analyses tab reports the version it actually found, so you can confirm it
+# landed in the right interpreter.
+
+# Reads .tpr + .xtc directly. Adds RDF, dihedrals and native-contacts Q.
+MDAnalysis>=2.7
+
+# Shrake-Rupley SASA and built-in DSSP, with no external binary.
+# Needs a topology dumped from the .tpr, which the app does for you via gmx.
+mdtraj>=1.9
+
+# cpptraj is NOT a Python package — it ships with AmberTools, and must be on
+# the PATH of the shell that launches the backend:
+#
+#     conda install -c conda-forge ambertools

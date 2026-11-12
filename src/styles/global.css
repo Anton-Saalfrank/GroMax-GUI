@@ -1,0 +1,179 @@
+/* ─── Design tokens ─────────────────────────────────────────────────── */
+:root {
+  /* Background layers */
+  --bg-base:      #0b0d12;
+  --bg-panel:     #10131a;
+  --bg-surface:   #161b26;
+  --bg-elevated:  #1d2333;
+  --bg-hover:     #232a3a;
+
+  /* Borders */
+  --border:       #252d3d;
+  --border-light: #2e3a50;
+
+  /* Text */
+  --text-primary:   #e8edf5;
+  --text-secondary: #8896ad;
+  --text-muted:     #4a5568;
+  --text-code:      #7dd3fc;
+
+  /* Accents */
+  --accent:         #3b82f6;
+  --accent-bright:  #60a5fa;
+  --accent-dim:     #1d4ed8;
+  --green:          #34d399;
+  --green-dim:      #065f46;
+  --amber:          #fbbf24;
+  --red:            #f87171;
+  --purple:         #a78bfa;
+
+  /* Typography */
+  /* The fallback chain matters: it is what renders during the first paint,
+     before the webfont loads, and on any platform where it fails to. Each
+     entry is a neo-grotesque with similar metrics, so the swap is not a
+     visible reflow. */
+  --font-ui:   'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI',
+               'Helvetica Neue', Arial, sans-serif;
+  --font-mono: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo,
+               Consolas, monospace;
+
+  /* Spacing */
+  --radius-sm: 4px;
+  --radius:    8px;
+  --radius-lg: 12px;
+
+  /* Transitions */
+  --transition: 150ms ease;
+
+  /* Plot defaults (read by Plotly layouts so charts match the theme) */
+  --plot-font:  #8896ad;
+  --plot-grid:  #252d3d;
+  --plot-title: #e8edf5;
+}
+
+/* ─── Light theme ───────────────────────────────────────────────────── */
+/* Applied by setting data-theme="light" on <html>. Same token names, so all
+   components adapt without changes. */
+:root[data-theme="light"] {
+  --bg-base:      #f7f8fa;
+  --bg-panel:     #ffffff;
+  --bg-surface:   #ffffff;
+  --bg-elevated:  #f1f3f7;
+  --bg-hover:     #e7ebf2;
+
+  --border:       #dde2ea;
+  --border-light: #c6cedb;
+
+  --text-primary:   #10131a;
+  --text-secondary: #4a5568;
+  --text-muted:     #8896ad;
+  --text-code:      #0369a1;
+
+  --accent:         #2563eb;
+  --accent-bright:  #1d4ed8;
+  --accent-dim:     #93c5fd;
+  --green:          #059669;
+  --green-dim:      #a7f3d0;
+  --amber:          #d97706;
+  --red:            #dc2626;
+  --purple:         #7c3aed;
+
+  --plot-font:  #4a5568;
+  --plot-grid:  #dde2ea;
+  --plot-title: #10131a;
+}
+
+/* ─── Reset ─────────────────────────────────────────────────────────── */
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+html, body, #root {
+  height: 100%;
+  width: 100%;
+  overflow: hidden;
+}
+
+body {
+  font-family: var(--font-ui);
+  background: var(--bg-base);
+  color: var(--text-primary);
+  font-size: 13px;
+  line-height: 1.55;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  /* Inter's defaults include slashed-zero-adjacent alternates off; keeping
+     contextual alternates on is what makes it read cleanly at 13px. */
+  font-feature-settings: 'cv05' 1, 'calt' 1;
+  user-select: none;
+}
+
+/* ─── Scrollbars ────────────────────────────────────────────────────── */
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: var(--border-light); border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: var(--text-muted); }
+
+/* ─── Typography ────────────────────────────────────────────────────── */
+h1 { font-size: 21px; font-weight: 650; letter-spacing: -0.25px; }
+h2 { font-size: 16px; font-weight: 600; letter-spacing: -0.15px; }
+/* Uppercase needs POSITIVE tracking to stay readable; at 11px it also works
+   better as a quiet label than as another heading competing with h2. */
+h3 { font-size: 11px; font-weight: 600; letter-spacing: 0.6px;
+     text-transform: uppercase; color: var(--text-secondary); }
+
+code, .mono { font-family: var(--font-mono); font-size: 11px; }
+
+/* ─── Base interactive ──────────────────────────────────────────────── */
+button {
+  font-family: var(--font-ui);
+  font-size: 13px;
+  cursor: pointer;
+  border: none;
+  outline: none;
+  transition: background var(--transition), color var(--transition), opacity var(--transition);
+}
+
+button:disabled { opacity: 0.4; cursor: not-allowed; }
+
+input, textarea, select {
+  font-family: var(--font-ui);
+  font-size: 13px;
+  background: var(--bg-surface);
+  color: var(--text-primary);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 6px 10px;
+  outline: none;
+  transition: border-color var(--transition);
+}
+
+input:focus, textarea:focus, select:focus {
+  border-color: var(--accent);
+}
+
+/* ─── Utility classes ───────────────────────────────────────────────── */
+.sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0,0,0,0); }
+.truncate { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.flex { display: flex; }
+.flex-col { display: flex; flex-direction: column; }
+.items-center { align-items: center; }
+.gap-1 { gap: 4px; }
+.gap-2 { gap: 8px; }
+.gap-3 { gap: 12px; }
+
+/* ─── Animations ────────────────────────────────────────────────────── */
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(4px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50%       { opacity: 0.4; }
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+.fade-in { animation: fadeIn 200ms ease forwards; }
+.spin { animation: spin 1s linear infinite; }
