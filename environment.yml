@@ -1,0 +1,112 @@
+# Complete environment for MD Studio — Python, Node AND GROMACS in one solve.
+#
+#     conda env create -f environment.yml
+#     conda activate mdstudio
+#     npm install                      # fetches node_modules (not conda's job)
+#     bash run-browser.sh              # or: npm run dev
+#
+# WHY THIS FILE EXISTS
+# setup.sh installs the Python and Node *packages*, but it cannot install the
+# two dependencies that come from outside the language ecosystems: GROMACS and
+# a Node runtime. It checks for them, warns, and carries on — so a fresh clone
+# passes setup and then fails the first time an analysis is run. This file
+# closes that gap, so "it installed" and "it works" mean the same thing.
+#
+# Use mamba if you have it (`mamba env create -f environment.yml`); the solve
+# is minutes faster and the result is identical.
+
+name: mdstudio
+
+channels:
+  - conda-forge
+  # nodefaults keeps the solver off the Anaconda "defaults" channel, which
+  # carries its own terms of use and does not ship GROMACS anyway.
+  - nodefaults
+
+dependencies:
+  # ─── Interpreter ──────────────────────────────────────────────────────────
+  # 3.11 is the floor the app is written against and the version the lock file
+  # was frozen on. 3.12+ very likely works but is not what has been verified.
+  - python=3.11
+
+  # ─── GROMACS — the reason this file is worth having ───────────────────────
+  # PINNED, not a floor. The app shells out to `gmx` for every core analysis
+  # and three of those calls are version-sensitive:
+  #
+  #   * `gmx dssp` does not exist before 2023 (it was `gmx do_dssp` plus a
+  #     separate DSSP binary), and there is no fallback path in the code. On an
+  #     older GROMACS the secondary-structure analysis fails at the point of
+  #     clicking it, not at setup.
+  #   * `gmx dssp -hmode` is a 2024-era option.
+  #   * `gmx hbond` was rewritten in 2024; the old implementation survives as
+  #     `gmx hbond-legacy`, which means flags and output differ either side of
+  #     that boundary.
+  #
+  # 2024.2 is the version the app was developed and verified against. Moving
+  # this pin means re-checking those three calls.
+  #
+  # NOT AVAILABLE ON WINDOWS. conda-forge builds GROMACS for Linux and macOS
+  # (Intel and Apple Silicon) only. On Windows, run the app under WSL2 and use
+  # this file there, or point the Setup tab at a native GROMACS build.
+  #
+  # The installed `bin/gmx` is a wrapper script that picks the matching SIMD
+  # build (bin.AVX2_256, bin.ARM_NEON_ASIMD, …) at run time, so plain `gmx` is
+  # correct and fast once the environment is active — nothing needs to be
+  # configured in the app's Setup tab.
+  - gromacs=2024.2
+
+  # ─── Node runtime ─────────────────────────────────────────────────────────
+  # Only needed to build or dev-serve the frontend. Someone installing a
+  # packaged release (.dmg/.AppImage) does not need this at all — the release
+  # ships the built frontend and a frozen Python backend.
+  #
+  # PINNED TO THE MAJOR CI USES. .github/workflows/build.yml builds every
+  # release on node-version "20", so that is the only Node the packaging path
+  # is actually verified against. Left as `>=20` the solver picks the newest
+  # release (25.x at the time of writing), which means a contributor builds
+  # the installers on a Node that CI has never run — exactly the difference
+  # that produces a build failure nobody can reproduce.
+  - nodejs=20.*
+
+  # ─── Backend runtime ──────────────────────────────────────────────────────
+  # Mirrors backend/requirements.txt. Bounds stay loose, as they are there, so
+  # the solver has room; backend/requirements.lock is the pinned set to use
+  # when reproducing published results.
+  - fastapi>=0.111
+  # The conda equivalent of `uvicorn[standard]`. If the solver cannot find it,
+  # plain `uvicorn` is fine — the extras are optional speedups (uvloop,
+  # httptools) that the app does not depend on.
+  - uvicorn-standard>=0.29
+  - pydantic>=2.9
+  - pydantic-settings>=2.4
+  - python-multipart>=0.0.9
+
+  # ─── Numerical ────────────────────────────────────────────────────────────
+  # scipy is a hard requirement despite being imported lazily: core/cavity.py
+  # and core/structure.py use cKDTree and ndimage inside the cavity functions.
+  # The lazy import once hid this well enough to ship a cavity feature that
+  # raised ModuleNotFoundError the first time it was clicked.
+  - numpy>=1.26
+  - scipy>=1.11
+
+  # ─── Optional analysis engines ────────────────────────────────────────────
+  # None of these are required — the GROMACS engine covers every analysis the
+  # app offers, and a missing engine shows up greyed out in the Analyses tab
+  # with the command to install it. They are included because the whole point
+  # of this file is that one command leaves nothing greyed out.
+  #
+  # MDAnalysis reads .tpr + .xtc directly and adds RDF, dihedrals and native
+  # contacts Q. mdtraj adds Shrake-Rupley SASA and a built-in DSSP needing no
+  # external binary.
+  - mdanalysis>=2.7
+  - mdtraj>=1.9
+
+  # cpptraj ships inside AmberTools, which is a ~2 GB install and pulls a large
+  # dependency tree. Deliberately left commented out rather than imposed on
+  # everyone; uncomment if you want the cpptraj engine.
+  # - ambertools
+
+  # ─── Development and verification ─────────────────────────────────────────
+  # verify.sh runs a static undefined-name pass with pyflakes, so the test
+  # gate does not pass merely because nothing happened to be imported.
+  - pyflakes>=3.0
