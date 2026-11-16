@@ -4,6 +4,147 @@ A desktop GUI for GROMACS trajectory analysis. Scan a folder of simulations,
 auto-pair replicas, run analyses (RMSF, RMSD, Rg) across conditions, and
 compare results in interactive plots.
 
+## Install
+
+Four steps from nothing to a running app. Copy-paste each block in order.
+
+### What you need first
+
+Only two things:
+
+| | |
+|---|---|
+| **git** | to download the code |
+| **conda** | installs everything else — [Miniforge](https://conda-forge.org/download/) if you have neither |
+
+You do **not** need to install Python, Node.js or GROMACS by hand. Step 2
+brings all three, so this works on a machine with none of them.
+
+**Platforms.** macOS (Intel and Apple Silicon) and Linux. On **Windows**, run
+these steps inside [WSL2](https://learn.microsoft.com/windows/wsl/install) —
+conda-forge publishes no GROMACS build for native Windows.
+
+### 1. Download the code
+
+```bash
+git clone https://github.com/Anton-Saalfrank/MD_Studio.git
+cd MD_Studio
+```
+
+### 2. Create the environment
+
+```bash
+conda env create -f environment.yml
+conda activate gromax-gui
+```
+
+This puts Python 3.11, **GROMACS 2024.2**, Node 20 and every analysis
+dependency into one self-contained environment. It does not touch, move or
+upgrade any GROMACS you already have elsewhere.
+
+Expect a few minutes and about 200 packages. If you have `mamba`, use
+`mamba env create -f environment.yml` for the same result, faster.
+
+### 3. Install the frontend packages
+
+```bash
+npm install
+```
+
+### 4. Run it
+
+```bash
+npm run dev
+```
+
+The desktop app opens.
+
+> **Keep `gromax-gui` activated whenever you run the app.** It launches its
+> backend with whatever `python3` is first on your PATH, which has to be the
+> one holding the dependencies. This is the single most common way a working
+> install appears broken.
+
+### 5. Check it worked
+
+In the app, open the **Setup tab**. It should report a detected GROMACS and
+its version: with the environment active, `gmx` is found on your PATH
+automatically, so there is nothing to paste in. If you see a version, you are
+ready — carry on to [Usage](#usage).
+
+The same check from a terminal, with `gromax-gui` active:
+
+```bash
+gmx --version | grep "GROMACS version"               # expect 2024.2
+python3 -c "import fastapi, numpy, scipy; print('deps OK')"
+```
+
+---
+
+### Alternative: you already have a GROMACS you want to keep
+
+Skip the conda environment and install only the Python and Node packages:
+
+```bash
+bash setup.sh
+```
+
+Then paste the full path to your own `gmx` into the app's **Setup tab** — find
+it with `conda activate <your-env> && which gmx`. That environment does *not*
+need to stay activated; the app only needs the path.
+
+This route assumes **Python 3.11+**, **Node.js 20+** and **GROMACS 2024 or
+newer** are already present. See Troubleshooting for why the GROMACS version
+matters.
+
+### Alternative: run in a browser instead of the desktop app
+
+Either start the backend alongside the dev server:
+
+```bash
+bash run-browser.sh          # then open http://localhost:5173
+```
+
+or build the frontend once and let the single Python process serve both it and
+the API:
+
+```bash
+npx vite build
+python3 backend/main.py --port 7432     # then open http://localhost:7432
+```
+
+### Troubleshooting
+
+**The Setup tab can't find `gmx`.** The environment is not active in the shell
+that started the app. Run `conda activate gromax-gui`, then `which gmx` — if
+that prints a path, relaunch the app from that same shell.
+
+**Secondary structure (DSSP) fails, but every other analysis works.** Your
+GROMACS is older than 2023. The app calls `gmx dssp`, which did not exist
+before then (it was `gmx do_dssp` plus a separate DSSP binary), and there is no
+fallback. `gmx dssp -hmode` and the rewritten `gmx hbond` are 2024-era, so
+**GROMACS 2024.x is the supported floor** — which is exactly what
+`environment.yml` pins. Note that the app currently reports only *whether*
+`gmx` was found, not whether its version is new enough, so an old GROMACS
+looks fine until you click the analysis.
+
+**An engine is greyed out in the Analyses tab.** It was installed into a
+different Python than the one running the backend. The tab reports the version
+it actually found, so use that to confirm which interpreter won, then install
+into the active environment. (Only the GROMACS engine is required — the others
+add alternative implementations.)
+
+**"Port already in use" on startup.** Another copy is still running. The app
+picks a free port automatically; if it still complains, close the other copy.
+
+**Where did my work go?** Projects live in `~/.gromax/projects/`, archived ones
+in `~/.gromax/archive/`, and the log — worth attaching to any bug report — is
+`~/.gromax/gromax.log`.
+
+> **No prebuilt installers yet.** When releases are published, a
+> `.dmg`/`.AppImage` will need only GROMACS, since the installers bundle the
+> frontend and a frozen Python backend. Until then, the steps above are the
+> way in.
+
 ## What works now (v1.0.0)
 
 - **Projects** — create/open projects saved to `~/.gromax/projects/`
@@ -76,20 +217,6 @@ compare results in interactive plots.
 - **Job queue** — live progress, cancellable, with logs
 - **Results** — interactive Plotly charts, conditions overlaid, mean ± SD band,
   optional individual-replica traces, SVG export
-
-## Setup
-
-Prerequisites: **Node.js 20+**, **Python 3.11+**, **GROMACS**.
-
-```bash
-bash setup.sh          # installs Node + Python deps (run once)
-bash run-browser.sh    # starts backend + frontend, open http://localhost:5173
-```
-
-### If you use a conda GROMACS environment
-
-You don't need to activate it. Just paste the full path to `gmx` in the
-app's Setup tab (find it with `conda activate <env> && which gmx`).
 
 ## Usage
 
