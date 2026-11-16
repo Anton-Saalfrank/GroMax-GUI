@@ -6,23 +6,61 @@ compare results in interactive plots.
 
 ## Install
 
-Four steps from nothing to a running app. Copy-paste each block in order.
+Five steps from a bare machine to a running app. Copy-paste each block in
+order; nothing is left implicit.
+
+**The whole thing, if you just want the commands:**
+
+```bash
+git clone https://github.com/Anton-Saalfrank/MD_Studio.git
+cd MD_Studio
+conda env create -f environment.yml     # Python + GROMACS + Node, ~5-10 min
+conda activate gromax-gui
+npm install                             # frontend packages, ~1-2 min
+npm run dev                             # the app opens
+```
+
+The rest of this section explains each line, says what success looks like, and
+covers the ways it can go wrong.
 
 ### What you need first
 
 Only two things:
 
-| | |
-|---|---|
-| **git** | to download the code |
-| **conda** | installs everything else — [Miniforge](https://conda-forge.org/download/) if you have neither |
+| | | |
+|---|---|---|
+| **git** | to download the code | preinstalled on macOS and most Linux |
+| **conda** | installs everything else | [Miniforge](https://conda-forge.org/download/) if you have neither |
 
 You do **not** need to install Python, Node.js or GROMACS by hand. Step 2
 brings all three, so this works on a machine with none of them.
 
-**Platforms.** macOS (Intel and Apple Silicon) and Linux. On **Windows**, run
-these steps inside [WSL2](https://learn.microsoft.com/windows/wsl/install) —
-conda-forge publishes no GROMACS build for native Windows.
+<details>
+<summary>Installing Miniforge, if you don't have conda</summary>
+
+Miniforge is a minimal conda that defaults to the conda-forge channel — which
+is where the GROMACS build comes from. Anaconda or Miniconda work too.
+
+```bash
+# macOS (Apple Silicon or Intel) and Linux — detects your platform
+curl -L -o Miniforge3.sh "https://github.com/conda-forge/miniforge/releases/latest/download/Miniforge3-$(uname)-$(uname -m).sh"
+bash Miniforge3.sh -b -p "$HOME/miniforge3"
+"$HOME/miniforge3/bin/conda" init "$(basename "$SHELL")"
+```
+
+Then **close and reopen your terminal**. Check it took:
+
+```bash
+conda --version        # e.g. conda 24.9.2
+```
+
+</details>
+
+**Platforms.** macOS (Intel and Apple Silicon) and Linux are supported
+directly. On **Windows**, run every step below inside
+[WSL2](https://learn.microsoft.com/windows/wsl/install) — conda-forge publishes
+no GROMACS build for native Windows, so there is nothing to install there. A
+WSL2 Ubuntu shell behaves exactly like the Linux instructions.
 
 ### 1. Download the code
 
@@ -30,6 +68,12 @@ conda-forge publishes no GROMACS build for native Windows.
 git clone https://github.com/Anton-Saalfrank/MD_Studio.git
 cd MD_Studio
 ```
+
+Everything after this assumes you are inside that folder. If a later command
+says "file not found", check with `pwd` that you still are.
+
+> The repository is named `MD_Studio` from an earlier working title; the app
+> itself is GroMax GUI. Clone the URL as written.
 
 ### 2. Create the environment
 
@@ -39,11 +83,23 @@ conda activate gromax-gui
 ```
 
 This puts Python 3.11, **GROMACS 2024.2**, Node 20 and every analysis
-dependency into one self-contained environment. It does not touch, move or
-upgrade any GROMACS you already have elsewhere.
+dependency into one self-contained environment named `gromax-gui`. It does
+not touch, move or upgrade any GROMACS, Python or Node you already have
+elsewhere — conda environments are isolated directories, and removing this one
+later leaves no trace (see [Removing it again](#removing-it-again)).
 
-Expect a few minutes and about 200 packages. If you have `mamba`, use
-`mamba env create -f environment.yml` for the same result, faster.
+Expect a few minutes and around 200 packages, so have a couple of GB free.
+If you have `mamba`, `mamba env create -f environment.yml` gives the identical
+result considerably faster.
+
+**You should see**, at the end:
+
+```
+# To activate this environment, use
+#     $ conda activate gromax-gui
+```
+
+and after activating, your prompt gains a `(gromax-gui)` prefix.
 
 ### 3. Install the frontend packages
 
@@ -51,72 +107,148 @@ Expect a few minutes and about 200 packages. If you have `mamba`, use
 npm install
 ```
 
+Node itself came from step 2, so this needs no separate Node install. It
+downloads React, Plotly, Electron and the build tooling into `node_modules/`
+(a few hundred MB, inside the project folder).
+
+Warnings about deprecated transitive packages are normal and can be ignored.
+An `npm ERR!` is not — see [Troubleshooting](#troubleshooting).
+
 ### 4. Run it
 
 ```bash
 npm run dev
 ```
 
-The desktop app opens.
+This starts three things at once: the Vite dev server, the Python backend, and
+the Electron desktop window. The window opens by itself after a few seconds.
+Leave the terminal running — closing it stops the app. `Ctrl+C` to quit.
 
 > **Keep `gromax-gui` activated whenever you run the app.** It launches its
 > backend with whatever `python3` is first on your PATH, which has to be the
-> one holding the dependencies. This is the single most common way a working
-> install appears broken.
+> one holding the dependencies. Every new terminal needs
+> `conda activate gromax-gui` again first. This is the single most common way
+> a working install appears broken.
 
 ### 5. Check it worked
 
-In the app, open the **Setup tab**. It should report a detected GROMACS and
-its version: with the environment active, `gmx` is found on your PATH
-automatically, so there is nothing to paste in. If you see a version, you are
-ready — carry on to [Usage](#usage).
+Look at the **title bar** of the app window. On the right you want:
+
+```
+● backend online · gmx ✓
+```
+
+A green `backend online` means the Python half started and the UI reached it.
+`gmx ✓` means GROMACS was found. With the environment active, `gmx` is on your
+PATH, so it is detected automatically and there is nothing to paste in — the
+**Setup tab** shows the detected version if you want to confirm which build it
+picked.
+
+Two failure shapes, both covered in [Troubleshooting](#troubleshooting):
+
+| Title bar says | Meaning |
+|---|---|
+| `backend offline` (red) | the Python backend didn't start |
+| `backend online · gmx not found` (amber) | app is fine, GROMACS isn't visible |
 
 The same check from a terminal, with `gromax-gui` active:
 
 ```bash
 gmx --version | grep "GROMACS version"               # expect 2024.2
 python3 -c "import fastapi, numpy, scipy; print('deps OK')"
+node --version                                       # expect v20.x
 ```
+
+All three printing sensibly means the install is sound, and you can carry on to
+[Usage](#usage).
 
 ---
 
 ### Alternative: you already have a GROMACS you want to keep
 
-Skip the conda environment and install only the Python and Node packages:
+If you have a tuned or GPU-enabled GROMACS build, don't let conda shadow it.
+Skip step 2 and install only the Python and Node packages:
 
 ```bash
 bash setup.sh
 ```
 
 Then paste the full path to your own `gmx` into the app's **Setup tab** — find
-it with `conda activate <your-env> && which gmx`. That environment does *not*
-need to stay activated; the app only needs the path.
+it with `which gmx`, or `conda activate <your-env> && which gmx` if it lives in
+another environment. That environment does **not** need to stay activated
+afterwards; the app stores and invokes the path directly.
 
 This route assumes **Python 3.11+**, **Node.js 20+** and **GROMACS 2024 or
-newer** are already present. See Troubleshooting for why the GROMACS version
-matters.
+newer** are already present — `setup.sh` checks the first two and stops if they
+are missing, but only *warns* about GROMACS and carries on. See
+[Troubleshooting](#troubleshooting) for why the GROMACS version matters.
 
 ### Alternative: run in a browser instead of the desktop app
 
-Either start the backend alongside the dev server:
+Useful on a headless machine, over SSH, or if Electron won't start.
+
+Either run the backend alongside the Vite dev server:
 
 ```bash
 bash run-browser.sh          # then open http://localhost:5173
 ```
 
-or build the frontend once and let the single Python process serve both it and
-the API:
+or build the frontend once and let a single Python process serve both the UI
+and the API — closest to how the packaged app behaves:
 
 ```bash
 npx vite build
 python3 backend/main.py --port 7432     # then open http://localhost:7432
 ```
 
+### Updating to a newer version
+
+```bash
+git pull
+conda env update -f environment.yml --prune     # only if environment.yml changed
+npm install                                     # only if package.json changed
+```
+
+Running both anyway is harmless, just slower. Your projects live outside the
+repository (in `~/.gromax/`), so pulling never touches your data.
+
+### Removing it again
+
+```bash
+conda deactivate
+conda env remove -n gromax-gui     # the environment, incl. its GROMACS
+rm -rf /path/to/MD_Studio          # the code and node_modules
+rm -rf ~/.gromax                   # your projects and results — only if you mean it
+```
+
 ### Troubleshooting
 
-**The Setup tab can't find `gmx`.** The environment is not active in the shell
-that started the app. Run `conda activate gromax-gui`, then `which gmx` — if
-that prints a path, relaunch the app from that same shell.
+**`conda: command not found`.** conda isn't installed, or its shell hook isn't
+loaded. Install Miniforge (above), then open a *new* terminal — `conda init`
+only affects shells started afterwards.
+
+**The environment solve takes forever or fails to resolve.** Use `mamba env
+create -f environment.yml`, or `conda env create -f environment.yml
+--solver=libmamba`. If it still fails, check `conda config --show channels`:
+`environment.yml` requests conda-forge explicitly, but a pinned
+`defaults`-first config can interfere.
+
+**`npm ERR!` during `npm install`.** Confirm `node --version` reports v20.x —
+if it reports something else, the environment isn't active and you are using a
+system Node. Otherwise clear and retry: `rm -rf node_modules package-lock.json
+&& npm install`.
+
+**The title bar says `backend offline`.** The Python backend failed to start.
+Scroll up in the terminal running `npm run dev` for a traceback. The usual
+cause is a missing dependency because the environment wasn't active; verify
+with `python3 -c "import fastapi, numpy, scipy"`. The log at
+`~/.gromax/gromax.log` is worth attaching to any bug report.
+
+**The title bar says `gmx not found`, or the Setup tab can't find `gmx`.** The
+environment is not active in the shell that started the app. Run `conda
+activate gromax-gui`, then `which gmx` — if that prints a path, relaunch the
+app from that same shell. Alternatively paste the path into the Setup tab,
+which persists it and removes the dependency on PATH entirely.
 
 **Secondary structure (DSSP) fails, but every other analysis works.** Your
 GROMACS is older than 2023. The app calls `gmx dssp`, which did not exist
@@ -125,7 +257,17 @@ fallback. `gmx dssp -hmode` and the rewritten `gmx hbond` are 2024-era, so
 **GROMACS 2024.x is the supported floor** — which is exactly what
 `environment.yml` pins. Note that the app currently reports only *whether*
 `gmx` was found, not whether its version is new enough, so an old GROMACS
-looks fine until you click the analysis.
+looks fine right up until you click the analysis.
+
+**The Electron window never appears (Linux).** Electron needs GUI system
+libraries that minimal and server images don't ship. On Debian/Ubuntu:
+
+```bash
+sudo apt-get install -y libnss3 libatk1.0-0 libatk-bridge2.0-0 libcups2 \
+  libgtk-3-0 libgbm1 libasound2
+```
+
+On a genuinely headless machine, use browser mode instead (above).
 
 **An engine is greyed out in the Analyses tab.** It was installed into a
 different Python than the one running the backend. The tab reports the version
@@ -138,7 +280,8 @@ picks a free port automatically; if it still complains, close the other copy.
 
 **Where did my work go?** Projects live in `~/.gromax/projects/`, archived ones
 in `~/.gromax/archive/`, and the log — worth attaching to any bug report — is
-`~/.gromax/gromax.log`.
+`~/.gromax/gromax.log`. None of it is inside the repository, so it survives
+`git pull` and re-cloning.
 
 > **No prebuilt installers yet.** When releases are published, a
 > `.dmg`/`.AppImage` will need only GROMACS, since the installers bundle the
