@@ -12,8 +12,8 @@ order; nothing is left implicit.
 **The whole thing, if you just want the commands:**
 
 ```bash
-git clone https://github.com/Anton-Saalfrank/MD_Studio.git
-cd MD_Studio
+git clone https://github.com/Anton-Saalfrank/GroMax-GUI.git
+cd GroMax-GUI
 conda env create -f environment.yml     # Python + GROMACS + Node, ~5-10 min
 conda activate gromax-gui
 npm install                             # frontend packages, ~1-2 min
@@ -65,15 +65,12 @@ WSL2 Ubuntu shell behaves exactly like the Linux instructions.
 ### 1. Download the code
 
 ```bash
-git clone https://github.com/Anton-Saalfrank/MD_Studio.git
-cd MD_Studio
+git clone https://github.com/Anton-Saalfrank/GroMax-GUI.git
+cd GroMax-GUI
 ```
 
 Everything after this assumes you are inside that folder. If a later command
 says "file not found", check with `pwd` that you still are.
-
-> The repository is named `MD_Studio` from an earlier working title; the app
-> itself is GroMax GUI. Clone the URL as written.
 
 ### 2. Create the environment
 
@@ -217,7 +214,7 @@ repository (in `~/.gromax/`), so pulling never touches your data.
 ```bash
 conda deactivate
 conda env remove -n gromax-gui     # the environment, incl. its GROMACS
-rm -rf /path/to/MD_Studio          # the code and node_modules
+rm -rf /path/to/GroMax-GUI         # the code and node_modules
 rm -rf ~/.gromax                   # your projects and results — only if you mean it
 ```
 
