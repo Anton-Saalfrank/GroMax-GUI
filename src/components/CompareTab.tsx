@@ -256,6 +256,26 @@ export default function CompareTab() {
     if (n.has(k)) n.delete(k); else n.add(k)
     setter(n)
   }
+  /*
+   * The same flip for every replica of one condition at once.
+   *
+   * Ten runs per condition means ten clicks to look at three of them, and that
+   * cost falls on exactly the comparison this panel exists to support — so the
+   * expensive path was the one you actually want. Going to an EXTREME rather
+   * than flipping each key is what makes it cheap: clear the condition once,
+   * then add back the three you want.
+   *
+   * It takes an explicit `on` instead of inverting per key, because a mixed
+   * selection has no sensible inverse: flipping seven shown and three hidden
+   * would leave seven hidden and three shown, which is not a state anyone
+   * asked for.
+   */
+  const setMany = (set:Set<string>, setter:(s:Set<string>)=>void,
+                   keys:string[], on:boolean) => {
+    const n = new Set(set)
+    for (const k of keys) { if (on) n.add(k); else n.delete(k) }
+    setter(n)
+  }
 
   const activeMetrics = (mode==='correlation'||mode==='crosscorr') ? [metricA, metricB] : [metricA]
   const uniqMetrics = Array.from(new Set(activeMetrics.filter(Boolean)))
@@ -2212,6 +2232,7 @@ export default function CompareTab() {
         </div>
         <div style={{ fontSize:10, color:'var(--text-muted)', marginBottom:12, lineHeight:1.5 }}>
           Click to highlight. Eye hides. Ban excludes from mean/SD (recomputes live).
+          The eye and ban beside a condition name do all of its repeats at once.
           {mode==='overlay' && <> The swatch sets that replica's line colour, overriding
           the <strong>colour by</strong> rule.</>}
         </div>
@@ -2233,9 +2254,60 @@ export default function CompareTab() {
             {uniqMetrics.length>1 && <div style={{ fontSize:10, color:'var(--text-muted)', textTransform:'uppercase', marginBottom:4 }}>{t}</div>}
             {(byKey[t]||[]).map(r => (
               <div key={r.condition_id} style={{ marginBottom:8 }}>
-                <div style={{ display:'flex', alignItems:'center', gap:6, fontSize:11, fontWeight:600, marginBottom:3 }}>
-                  <span style={{ width:8, height:8, borderRadius:'50%', background:r.colour }} />
-                  {r.condition_name}
+                <div style={{ display:'flex', alignItems:'center', gap:5, fontSize:11, fontWeight:600, marginBottom:3 }}>
+                  <span style={{ width:8, height:8, borderRadius:'50%', background:r.colour, flexShrink:0 }} />
+                  <span style={{ flex:1, overflow:'hidden', textOverflow:'ellipsis',
+                                 whiteSpace:'nowrap' }} title={r.condition_name}>
+                    {r.condition_name}
+                  </span>
+                  {/*
+                    The bulk buttons show the ACTION, not the state — the
+                    opposite of the replica rows below, where the icon is the
+                    state. A condition of ten runs has three aggregate states,
+                    not two, so there is no single state for one icon to show;
+                    the count beside them says where things stand instead.
+                  */}
+                  {(() => {
+                    const keys = (r.replicas||[])
+                      .map(rep => repKey(t, r.condition_id!, rep.index))
+                    if (keys.length < 2) return null
+                    const nShown = keys.filter(k => !hidden.has(k)).length
+                    const allHidden = nShown === 0
+                    const allExcluded = keys.every(k => excluded.has(k))
+                    const bulk = (active:boolean):React.CSSProperties => ({
+                      padding:2, background:'transparent', border:'none',
+                      cursor:'pointer', lineHeight:1,
+                      color: active ? 'var(--accent-bright)' : 'var(--text-muted)',
+                    })
+                    return (
+                      <>
+                        <span style={{ fontSize:10, fontWeight:400,
+                                       fontFamily:'var(--font-mono)',
+                                       color:'var(--text-muted)' }}
+                              title={`${nShown} of ${keys.length} shown`}>
+                          {nShown}/{keys.length}
+                        </span>
+                        <button
+                          onClick={()=>setMany(hidden,setHidden,keys,!allHidden)}
+                          title={allHidden
+                            ? `Show all ${keys.length} repeats of ${r.condition_name}`
+                            : `Hide all ${keys.length} repeats of ${r.condition_name} `
+                              + '— then click the ones you want back'}
+                          style={bulk(allHidden)}>
+                          {allHidden ? <Eye size={12}/> : <EyeOff size={12}/>}
+                        </button>
+                        <button
+                          onClick={()=>setMany(excluded,setExcluded,keys,!allExcluded)}
+                          title={allExcluded
+                            ? `Put all ${keys.length} repeats of ${r.condition_name} back into the mean`
+                            : `Exclude all ${keys.length} repeats of ${r.condition_name} from the mean`}
+                          style={{ ...bulk(allExcluded),
+                                   color: allExcluded ? 'var(--red)' : 'var(--text-muted)' }}>
+                          <Ban size={12}/>
+                        </button>
+                      </>
+                    )
+                  })()}
                 </div>
                 {(r.replicas||[]).map((rep, ri) => {
                   const k = repKey(t,r.condition_id!,rep.index)
