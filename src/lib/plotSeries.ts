@@ -199,6 +199,91 @@ export function resolveSeriesStyle(
   }
 }
 
+/* ── Replica line colour ──────────────────────────────────────────────────── */
+
+/**
+ * How an overlay colours its replica lines when nothing is overridden.
+ *
+ * 'condition' shades one condition's colour across its runs, 'repeat' gives
+ * run n the same colour in every condition so the same run is findable, and
+ * 'time' fades with position in the trajectory.
+ */
+export type ReplicaColourMode = 'condition' | 'repeat' | 'time'
+
+/**
+ * Key for a per-replica colour override.
+ *
+ * Condition and replica index only — deliberately NOT the metric. "Rep 3 of
+ * WT is the red one" is a statement about the run, and a colour that changed
+ * when you switched from RMSD to SASA would defeat the reason for fixing it:
+ * following one trajectory across several plots.
+ */
+export function repeatColourKey(conditionId: string, repIndex: number): string {
+  return `${conditionId}|${repIndex}`
+}
+
+/**
+ * The colour of ONE replica's line, with nothing left to decide.
+ *
+ * Precedence: explicit per-replica pick -> the colour-by mode -> the
+ * condition's colour. The override comes first unconditionally, including in
+ * 'time' mode, because a user who has coloured a run by hand has said
+ * something more specific than the mode has.
+ *
+ * `conditionColour` is already resolved through resolveSeriesStyle by the
+ * caller, so a per-condition series colour reaches here without this function
+ * needing to know about PlotStyle.
+ */
+export function replicaLineColour(opts: {
+  /** '' or undefined means no override. */
+  override?: string
+  conditionColour: string
+  mode: ReplicaColourMode
+  /** The replica's own number, as the user knows it (rep 1, rep 2...). */
+  repIndex: number
+  /** Its position in the drawn list, which may skip excluded runs. */
+  repOrder: number
+  total: number
+  /** 0..1 along the trajectory, for the time gradient. */
+  tFrac: number
+}): string {
+  const { override, conditionColour, mode, repIndex, repOrder, total, tFrac } = opts
+  if (override) return override
+  if (mode === 'repeat')
+    // -1 because replicas are numbered from one and palettes are indexed from
+    // zero; a replica 0 (which should not happen) must not wrap to the end.
+    return paletteColour(Math.max(0, repIndex - 1))
+  if (mode === 'time') {
+    const f = Number.isFinite(tFrac) ? Math.min(1, Math.max(0, tFrac)) : 0
+    return `rgba(79,142,247,${0.3 + 0.7 * f})`
+  }
+  return total > 1 ? lighten(conditionColour, (repOrder / total) * 0.5) : conditionColour
+}
+
+/**
+ * A colour as `#rrggbb`, for `<input type="color">`.
+ *
+ * That input silently rejects anything else and falls back to black, so a
+ * swatch showing the time-gradient colour — which is an `rgba()` string —
+ * would have read as "this replica is black" rather than "this replica
+ * inherits". Alpha is dropped: the input cannot express it, and the swatch is
+ * a starting point for picking, not a faithful rendering.
+ */
+export function toHexColour(c: string, fallback = '#4f8ef7'): string {
+  const s = String(c || '').trim()
+  if (/^#[0-9a-f]{6}$/i.test(s)) return s.toLowerCase()
+  if (/^#[0-9a-f]{3}$/i.test(s))
+    return ('#' + s.slice(1).split('').map(ch => ch + ch).join('')).toLowerCase()
+  const m = /^rgba?\(\s*([\d.]+)[\s,]+([\d.]+)[\s,]+([\d.]+)/i.exec(s)
+  if (m) {
+    const hex = [m[1], m[2], m[3]]
+      .map(v => Math.max(0, Math.min(255, Math.round(Number(v)))))
+      .map(v => v.toString(16).padStart(2, '0')).join('')
+    return `#${hex}`
+  }
+  return fallback
+}
+
 /**
  * The Plotly marker object for a series' dots.
  *

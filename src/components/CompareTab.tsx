@@ -5,9 +5,10 @@ import { useStore } from '../store'
 import { api } from '../api/client'
 import { plotTheme } from '../plotTheme'
 import PlotStyleControls, { PlotStyle, defaultPlotStyle, styledLayout, styledConfig,
-         errorBarStyle } from './PlotStyleControls'
+         errorBarStyle, axisDecor } from './PlotStyleControls'
 import { resolveSeriesStyle, seriesMarker, seriesMarkerArray, seriesBar,
-         seriesBarArray, seriesId } from '../lib/plotSeries'
+         seriesBarArray, seriesId, replicaLineColour, repeatColourKey,
+         toHexColour } from '../lib/plotSeries'
 import type { PlotSeries } from '../lib/plotSeries'
 import { frameMask, gate, gatedMean, passIntervals, evaluateReplica,
          alignFrames, describeFilter } from '../lib/plotFilter'
@@ -21,6 +22,12 @@ import {
 import type { TestKind } from '../lib/stats'
 import { StatsPanel, CorrelationStats, XCorrRepeatStats } from './plots/StatsPanel'
 import { RepeatDetailPanel } from './plots/RepeatDetailPanel'
+import { RepeatAxisPanel } from './plots/RepeatAxisPanel'
+import type { AxisRow } from './plots/RepeatAxisPanel'
+import { MetricSelect } from './plots/MetricSelect'
+import { DEFAULT_AXIS_LOCK, extentOf, mergeExtents, resolveAxisRange }
+  from '../lib/axisLock'
+import type { AxisLock, Extent } from '../lib/axisLock'
 import type { AnalysisResult, StoredResult } from '../types'
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -84,7 +91,11 @@ function useLineResults(sessionId: string): Record<string, AnalysisResult[]> {
 
 
 export default function CompareTab() {
-  const { activeSession, theme, setStructureFrame, setRequestedTab } = useStore()
+  const { activeSession, theme, setStructureFrame, setRequestedTab,
+          favouriteMetrics, toggleFavouriteMetric,
+          repeatAxisLocks, setRepeatAxisLock,
+          repeatXLock, setRepeatXLock,
+          repeatColours, setRepeatColour, clearRepeatColours } = useStore()
   const sessionId = activeSession?.id || ''
   const byKey = useLineResults(sessionId)
   const keys = Object.keys(byKey)
@@ -249,14 +260,23 @@ export default function CompareTab() {
   const activeMetrics = (mode==='correlation'||mode==='crosscorr') ? [metricA, metricB] : [metricA]
   const uniqMetrics = Array.from(new Set(activeMetrics.filter(Boolean)))
 
-  // colour for a replica trace given the colour mode
+  /*
+   * Colour for one replica's line.
+   *
+   * The rule itself moved to lib/plotSeries so it is testable and so the
+   * per-replica override cannot be forgotten at one of the call sites — the
+   * mistake this file's own header warns about twice. All this adds is the
+   * lookup of that override.
+   */
   const repColour = useCallback(
-    (condColour: string, repIndex: number, repIdx: number, total: number, tFrac: number) => {
-      if (colorMode === 'repeat') return REPEAT_PALETTE[(repIndex-1) % REPEAT_PALETTE.length]
-      if (colorMode === 'time') return `rgba(79,142,247,${0.3 + 0.7*tFrac})`
-      // condition: shades of the condition colour
-      return total > 1 ? lighten(condColour, (repIdx/(total)) * 0.5) : condColour
-    }, [colorMode])
+    (condColour: string, cid: string, repIndex: number, repIdx: number,
+     total: number, tFrac: number) =>
+      replicaLineColour({
+        override: repeatColours[repeatColourKey(cid, repIndex)],
+        conditionColour: condColour, mode: colorMode,
+        repIndex, repOrder: repIdx, total, tFrac,
+      }),
+    [colorMode, repeatColours])
 
   // ─── Overlay traces ─────────────────────────────────────────────────────────
   /*
@@ -289,6 +309,21 @@ export default function CompareTab() {
 
     for (const r of byKey[metricA] || []) {
       const cid = r.condition_id!
+      /*
+       * THE OVERLAY NOW RESOLVES ITS STYLE LIKE EVERY OTHER MODE.
+       *
+       * These traces were the one family that never called
+       * resolveSeriesStyle: line colour came straight from the stored
+       * condition colour and line width from the global PlotStyle, so the
+       * "Series colour", per-series line width and dash controls did nothing
+       * here while visibly working on bars and dots. That is exactly the
+       * two-sites-one-property split plotSeries.ts exists to prevent, and it
+       * had simply been missed on this path.
+       */
+      const rs = resolveSeriesStyle(baseSeries(cid), style, r.colour,
+                                    (byKey[metricA] || []).indexOf(r))
+      const condColour = rs.colour
+      const dash = rs.lineDash === 'solid' ? undefined : rs.lineDash
       const allReps = r.replicas || []
       const kept = allReps.filter(rep => !isExcluded(metricA, cid, rep.index))
       const xRef = (kept[0] as any)?.x || r.x
@@ -340,7 +375,7 @@ export default function CompareTab() {
         }
         for (const [x0, x1] of passIntervals(xRef, majority)) {
           shapes.push({ type: 'rect', xref: 'x', yref: 'paper', x0, x1, y0: 0, y1: 1,
-                        fillcolor: r.colour || '#4f8ef7', opacity: 0.1,
+                        fillcolor: condColour || '#4f8ef7', opacity: 0.1,
                         line: { width: 0 }, layer: 'below' })
         }
       }
@@ -371,14 +406,14 @@ export default function CompareTab() {
             type:'scatter', mode:'lines', line:{ color:'transparent' },
             showlegend:false, hoverinfo:'skip' })
           traces.push({ x: xs, y: mean.map((v:any,i:number)=> v===null?null:v+sd[i]),
-            type:'scatter', mode:'lines', fill:'tonexty', fillcolor:r.colour,
+            type:'scatter', mode:'lines', fill:'tonexty', fillcolor:condColour,
             opacity:0.13, line:{ color:'transparent' },
             showlegend:false, hoverinfo:'skip' })
         } else {
           const upper = mean.map((v:any,i:number)=>v+sd[i]), lower = mean.map((v:any,i:number)=>v-sd[i])
           traces.push({
             x:[...xs, ...xs.slice().reverse()],
-            y:[...upper, ...lower.reverse()], fill:'toself', fillcolor:r.colour,
+            y:[...upper, ...lower.reverse()], fill:'toself', fillcolor:condColour,
             opacity:0.13, line:{color:'transparent'}, type:'scatter', showlegend:false, hoverinfo:'skip',
           })
         }
@@ -396,13 +431,31 @@ export default function CompareTab() {
             // not a straight line across the excursion.
             y: (mk && !shadeMode) ? gate(rep.y, mk) : rep.y,
             type:'scattergl', mode:'lines',
-            line:{ color: repColour(r.colour||'#4f8ef7', rep.index, idx, allReps.length, idx/Math.max(1,allReps.length-1)),
-                   width: isHi?2.5:style.lineWidth, dash: style.lineDash === 'solid' ? undefined : style.lineDash },
+            line:{ color: repColour(condColour||'#4f8ef7', cid, rep.index, idx,
+                                    allReps.length, idx/Math.max(1,allReps.length-1)),
+                   width: isHi?2.5:rs.lineWidth, dash },
             opacity: highlight&&!isHi ? 0.12 : (isHi?1:(lineMode==='individual'?0.7:0.4)),
-            name:`${r.condition_name} rep${rep.index}`,
+            name:`rep ${rep.index}`,
             hovertemplate:`${r.condition_name} rep${rep.index}<br>%{x:.2f}, %{y:.3f}`
               + `<br><i>click to open this frame in 3D</i><extra></extra>`,
-            showlegend:false,
+            /*
+             * A KEY FOR THE REPLICA COLOURS.
+             *
+             * These traces were unconditionally absent from the legend, which
+             * was defensible while every run of a condition was a shade of one
+             * colour. It stops being defensible the moment the colours carry
+             * information — by the repeat palette, or picked by hand — because
+             * then the figure encodes which run is which and provides no way
+             * to read it.
+             *
+             * Grouped under the condition, and the group named once, so twenty
+             * runs read as two labelled blocks rather than twenty loose
+             * entries. Hidden and excluded runs never reach here, so the
+             * legend lists exactly what is drawn.
+             */
+            showlegend: style.legendReplicas,
+            legendgroup: cid,
+            legendgrouptitle: { text: r.condition_name || cid },
             // Plotly hands the whole trace back on a click, so `meta` is how a
             // point says which replica of which condition it belongs to.
             // The metric KEY, not its label — the label is resolved in the
@@ -416,11 +469,14 @@ export default function CompareTab() {
       if (lineMode==='both'||lineMode==='meansd') {
         traces.push({
           x:xRef.slice(0,mean.length), y:mean, type:'scatter', mode:'lines',
-          line:{ color: style.meanColor || r.colour,
-                 width: highlight?1.2:Math.max(2,style.lineWidth+0.7), dash: style.lineDash === 'solid' ? undefined : style.lineDash },
+          line:{ color: style.meanColor || condColour,
+                 width: highlight?1.2:Math.max(2,rs.lineWidth+0.7), dash },
           opacity: highlight?0.5:1,
           name: gapping ? `${r.condition_name} (gated, n varies)`
                         : `${r.condition_name} (n=${kept.length})`,
+          legendgroup: cid,
+          legendgrouptitle: style.legendReplicas
+            ? { text: r.condition_name || cid } : undefined,
           hovertemplate:`${r.condition_name} mean<br>%{x:.2f}, %{y:.3f}<extra></extra>`,
         })
       }
@@ -431,7 +487,7 @@ export default function CompareTab() {
     // each is a useCallback over exactly that state, so listing the callback
     // is both necessary and sufficient.
   }, [metricA, byKey, isExcluded, isHidden, repColour, highlight, lineMode,
-      style, model.gateFilterId, model.filters])
+      style, baseSeries, model.gateFilterId, model.filters])
 
   // ─── Correlation scatter ────────────────────────────────────────────────────
   /*
@@ -574,7 +630,8 @@ export default function CompareTab() {
   const together = useMemo(() => {
     const empty = { traces: [] as any[], layout: {} as any, panels: [] as any[],
                     skipped: [] as string[], repeats: [] as number[],
-                    conditions: [] as {id:string;name:string}[], span: null as null|[number,number] }
+                    conditions: [] as {id:string;name:string}[], span: null as null|[number,number],
+                    axisRows: [] as AxisRow[], axisToken: '' }
     if (mode !== 'together') return empty
 
     // Only time series belong on a shared time axis. An RMSF profile is
@@ -611,7 +668,17 @@ export default function CompareTab() {
     }
 
     const traces: any[] = []
-    const panels: {key:string; label:string; unit:string; colour:string}[] = []
+    /*
+     * `title` and `ylabel` are the two halves of `label`, split rather than
+     * repeated. The full "sasa · helix_cavity_atoms — SASA (nm^2)" was being
+     * used as a y-axis title on every panel, where it is rotated vertical and
+     * far longer than a 150px panel is tall — so five of them overlapped into
+     * an unreadable column down the left edge. The part that identifies the
+     * RUN goes above the panel as a heading, and only the part that names the
+     * quantity and its unit stays on the axis.
+     */
+    const panels: {key:string; label:string; title:string; ylabel:string;
+                   unit:string; colour:string}[] = []
     let lo = Infinity, hi = -Infinity
 
     active.forEach((k, i) => {
@@ -623,7 +690,8 @@ export default function CompareTab() {
       if (!xs.length || !ys.length) return
       const colour = REPEAT_PALETTE[i % REPEAT_PALETTE.length]
       const unit = /\(([^)]+)\)\s*$/.exec(r.ylabel || '')?.[1] || ''
-      panels.push({ key: k, label: metricLabel(k), unit, colour })
+      panels.push({ key: k, label: metricLabel(k), title: k,
+                    ylabel: r.ylabel || '', unit, colour })
       for (const v of xs) { if (v < lo) lo = v; if (v > hi) hi = v }
 
       // Normalising is only for the overlaid layout; stacked keeps the real
@@ -657,39 +725,174 @@ export default function CompareTab() {
       })
     })
 
+    // ── Axis extents, for locking a scale across repeats ──────────────────
+    /*
+     * Measured from the STORED replicas, not from the traces, because the
+     * traces only hold the one repeat on screen — which is precisely the run
+     * whose extent must not be allowed to set the scale.
+     */
+    const extentsOf = (k: string, condId: string | null) => {
+      let y: Extent | null = null, x: Extent | null = null
+      for (const r of byKey[k] || []) {
+        if (condId !== null && r.condition_id !== condId) continue
+        for (const pr of r.replicas || []) {
+          if (isExcluded(k, r.condition_id || '', pr.index)) continue
+          y = mergeExtents(y, extentOf(pr.y || []))
+          x = mergeExtents(x, extentOf((pr as any).x || r.x || []))
+        }
+      }
+      return { x, y }
+    }
+    const extents: Record<string, { repeats: {x: Extent|null; y: Extent|null}
+                                    all: {x: Extent|null; y: Extent|null} }> = {}
+    for (const k of active)
+      extents[k] = { repeats: extentsOf(k, cid), all: extentsOf(k, null) }
+
+    const lockFor = (k: string): AxisLock => repeatAxisLocks[k] || DEFAULT_AXIS_LOCK
+    /*
+     * Y locks apply to STACKED panels only. The overlaid layout has already
+     * destroyed the units to get everything onto one axis, so a range in nm is
+     * not a range in anything it draws.
+     */
+    const yRangeFor = (k: string) => togetherLayout !== 'stacked' ? undefined
+      : resolveAxisRange(lockFor(k), { repeats: extents[k]?.repeats.y ?? null,
+                                       all: extents[k]?.all.y ?? null })
+
+    const xExt = {
+      repeats: active.reduce((a, k) => mergeExtents(a, extents[k]?.repeats.x ?? null),
+                             null as Extent | null),
+      all: active.reduce((a, k) => mergeExtents(a, extents[k]?.all.x ?? null),
+                         null as Extent | null),
+    }
+    // Time gets almost no padding: a trajectory starts at 0 and ends where it
+    // ends, and a margin there just draws empty axis.
+    const xRange = resolveAxisRange(repeatXLock, xExt, 0.01)
+
+    const axisRows: AxisRow[] = [
+      ...panels.map(pn => ({
+        key: pn.key, label: pn.title, unit: pn.unit, colour: pn.colour,
+        lock: lockFor(pn.key),
+        extents: { repeats: extents[pn.key]?.repeats.y ?? null,
+                   all: extents[pn.key]?.all.y ?? null },
+        applied: yRangeFor(pn.key),
+      })),
+      { key: '__x__', label: 'Time', unit: 'ns', lock: repeatXLock,
+        extents: { repeats: xExt.repeats, all: xExt.all }, applied: xRange },
+    ]
+    /*
+     * Plotly keeps axis state across renders that share a uirevision, which is
+     * what stops a redraw throwing away someone's zoom. The flip side is that
+     * a NEW range computed here is also ignored, so changing a lock looked
+     * like it did nothing until the panel count happened to change too. The
+     * resolved ranges therefore go into the token.
+     */
+    const axisToken = axisRows
+      .map(r => `${r.key}:${r.lock.mode}:${r.applied?.join('_') ?? ''}`).join('|')
+
     // ── Layout ────────────────────────────────────────────────────────────
     const layout: any = {}
     if (togetherLayout === 'stacked' && panels.length) {
       const n = panels.length
-      const gap = 0.055
-      const h = (1 - gap * (n - 1)) / n
+      /*
+       * EVERY PANEL IS THE SAME HEIGHT IN PIXELS, and the figure grows instead.
+       *
+       * The old arithmetic set a total height of 150n + 90 and then split it
+       * into n equal FRACTIONS, so the per-panel height fell away as panels
+       * were added — 240 px with one, 144 px with four, 99 px with eight. Eight
+       * analyses is exactly when you most need to read them, and that is when
+       * they were thinnest. Sizing the figure from a fixed per-panel height and
+       * deriving the fractions from it inverts that: panel ten is as tall as
+       * panel one, and the page scrolls, which is free.
+       */
+      const PANEL_PX = 150
+      /*
+       * The gap now has to hold each panel's heading, not just separate two
+       * plot frames, so it is deeper than the 34px that sufficed when the
+       * identifying text lived on the axis.
+       */
+      const TITLE_PX = 20
+      const GAP_PX = 44
+      const plotPx = n * PANEL_PX + (n - 1) * GAP_PX
+      // The first panel's heading has no gap above it to sit in, so the top
+      // margin provides one.
+      const marginT = (style.title ? 44 : 10) + TITLE_PX
+      const marginB = 56
+      const fracPanel = PANEL_PX / plotPx
+      const fracGap = GAP_PX / plotPx
+
+      /*
+       * Headings are ANNOTATIONS, not per-axis titles.
+       *
+       * Plotly has no notion of a subplot title: a y-axis `title` is rotated
+       * and centred on the axis, which is exactly the placement being moved
+       * away from. A paper-referenced annotation pinned to the left edge just
+       * above each domain is the only way to get a flat heading over a panel.
+       */
+      const titles: any[] = []
+
       panels.forEach((pn, i) => {
-        const top = 1 - i * (h + gap)
+        const top = 1 - i * (fracPanel + fracGap)
         const key = i === 0 ? 'yaxis' : `yaxis${i+1}`
         layout[key] = {
-          domain: [Math.max(0, top - h), top],
-          title: { text: pn.label + (pn.unit ? ` (${pn.unit})` : ''),
-                   font: { size: Math.max(8, style.fontSize - 2) } },
-          showgrid: style.showGrid, gridcolor: style.gridColor,
-          zerolinecolor: style.gridColor,
+          // The frame, ticks and grid come from the same place as every other
+          // plot's; these panels used to set three of those properties by hand
+          // and silently ignore the rest.
+          ...axisDecor(style),
+          domain: [Math.max(0, top - fracPanel), Math.min(1, top)],
+          // Just the quantity and its unit — the run is named in the heading.
+          title: { text: pn.ylabel || pn.label,
+                   font: { size: Math.max(8, style.fontSize - 1) } },
+          range: yRangeFor(pn.key),
         }
+        titles.push({
+          text: `<b>${pn.title}</b>`,
+          xref: 'paper', yref: 'paper',
+          x: 0, xanchor: 'left',
+          y: Math.min(1, top) + 5 / plotPx, yanchor: 'bottom',
+          showarrow: false,
+          font: {
+            family: 'Arial Black, Arial Bold, Arial, Helvetica, sans-serif',
+            size: style.fontSize, color: style.fontColor,
+          },
+          align: 'left',
+        })
       })
+      layout.annotations = titles
+
       layout.xaxis = {
+        ...axisDecor(style),
         title: { text: 'Time (ns)' }, anchor: n === 1 ? 'y' : `y${n}`,
-        showgrid: style.showGrid, gridcolor: style.gridColor,
+        range: xRange,
         // A spike line drawn ACROSS every panel is what makes coincident events
         // readable: the eye cannot hold a vertical position across four panels.
         showspikes: true, spikemode: 'across', spikethickness: 1,
         spikecolor: style.gridColor, spikedash: 'dot',
       }
-      layout.height = Math.max(320, 150 * n + 90)
+      layout.height = plotPx + marginT + marginB
+      /*
+       * NO LEGEND, and the width it occupied goes to the time axis.
+       *
+       * A legend maps colour to series, and here each series already has its
+       * own panel with its own heading — so every entry restated something
+       * written six inches to its left, in a box wide enough to swallow a
+       * third of the plot. The margin is therefore the bare gutter rather than
+       * legendMargin's reservation.
+       *
+       * `l` is narrower too, now that the axis title is "SASA (nm²)" rather
+       * than the whole metric key.
+       */
+      layout.showlegend = false
+      layout.margin = { l: 58, r: 18, t: marginT, b: marginB }
       layout.hovermode = 'x unified'
       layout.spikedistance = -1
     }
     if (togetherLayout === 'overlay') {
+      // The overlaid layout DOES keep its legend: one axis, several series,
+      // and no per-panel heading to name them by.
       layout.hovermode = 'x unified'
-      layout.xaxis = { title: { text: 'Time (ns)' }, showgrid: style.showGrid,
-                       gridcolor: style.gridColor, showspikes: true,
+      layout.xaxis = { ...axisDecor(style),
+                       title: { text: 'Time (ns)' }, range: xRange,
+                       showspikes: true,
                        spikemode: 'across', spikethickness: 1,
                        spikecolor: style.gridColor, spikedash: 'dot' }
     }
@@ -703,14 +906,15 @@ export default function CompareTab() {
     }
 
     return { traces, layout, panels, skipped, repeats,
-             conditions: condList,
+             conditions: condList, axisRows, axisToken,
              span: Number.isFinite(lo) ? [lo, hi] as [number, number] : null }
     // metricLabel is intentionally absent: it is a hoisted function
     // declaration (see its own comment — a const there reintroduces a
     // temporal-dead-zone crash) and reads only byKey, which is listed.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [mode, keys, byKey, isExcluded, togetherCond, togetherRep, togetherMetrics,
-      togetherLayout, togetherNorm, cursorNs, style])
+      togetherLayout, togetherNorm, cursorNs, style,
+      repeatAxisLocks, repeatXLock])
 
   // ─── Cross-correlation ──────────────────────────────────────────────────────
   /*
@@ -1300,7 +1504,8 @@ export default function CompareTab() {
       // Includes the panel count and layout: Plotly reuses axis state across
       // re-renders with the same uirevision, so adding a panel would otherwise
       // leave the previous geometry behind.
-      uirevision: `${mode}-${metricA}-${metricB}-${together.panels.length}-${togetherLayout}`,
+      uirevision: `${mode}-${metricA}-${metricB}-${together.panels.length}`
+                 + `-${togetherLayout}-${together.axisToken}`,
     })
   const cfg = styledConfig(style)
 
@@ -1444,7 +1649,14 @@ export default function CompareTab() {
     const userX = lay.xaxis?.range
     const userY = lay.yaxis?.range
     Object.assign(lay, together.layout)
-    if (userX && lay.xaxis) lay.xaxis.range = userX
+    /*
+     * The axis panel beside the plot wins over the X range in Plot Settings
+     * when it has an opinion. Both are typed by hand, so neither is obviously
+     * senior — but only one of them is displayed next to the plot as the range
+     * in force, and a panel that states a range it is not applying is worse
+     * than either precedence.
+     */
+    if (userX && repeatXLock.mode === 'auto' && lay.xaxis) lay.xaxis.range = userX
     if (userY && togetherLayout === 'overlay' && lay.yaxis) lay.yaxis.range = userY
   }
   if (mode==='crosscorr') lay.shapes = [
@@ -1472,7 +1684,13 @@ export default function CompareTab() {
   return (
     <div style={{ flex:1, display:'flex', overflow:'hidden' }}>
       <div style={{ flex:1, overflow:'auto', padding:'24px 28px' }}>
-        <div style={{ maxWidth:840 }}>
+        {/*
+          Repeat detail is uncapped: it has given up the 230px replica panel and
+          the legend, and capping it at a column width would simply hand that
+          space back to the margin instead of to the time axis it was taken for.
+          The axis panel then sits against the right edge of the window.
+        */}
+        <div style={{ maxWidth: mode==='together' ? 'none' : 840 }}>
           <div style={{ display:'flex', alignItems:'center', gap:8, marginBottom:16, flexWrap:'wrap' }}>
             <h2 style={{ marginRight:'auto' }}>Plot Studio</h2>
             {([['overlay','Overlay',<TrendingUp size={13}/>],
@@ -1496,9 +1714,9 @@ export default function CompareTab() {
               <label style={{ display:'block', fontSize:10, color:'var(--text-muted)', marginBottom:3, textTransform:'uppercase' }}>
                 {(mode==='correlation'||mode==='crosscorr') ? 'Metric X' : 'Metric'}
               </label>
-              <select value={metricA} onChange={e=>setMetricA(e.target.value)} style={{ fontSize:12 }}>
-                {keys.map(k=><option key={k} value={k}>{metricLabel(k)}</option>)}
-              </select>
+              <MetricSelect value={metricA} onChange={setMetricA} keys={keys}
+                            labelFor={metricLabel} favourites={favouriteMetrics}
+                            onToggleFavourite={toggleFavouriteMetric} />
             </div>
             )}
 
@@ -1556,9 +1774,9 @@ export default function CompareTab() {
             {(mode==='correlation'||mode==='crosscorr') && (
               <div>
                 <label style={{ display:'block', fontSize:10, color:'var(--text-muted)', marginBottom:3, textTransform:'uppercase' }}>Metric Y</label>
-                <select value={metricB} onChange={e=>setMetricB(e.target.value)} style={{ fontSize:12 }}>
-                  {keys.map(k=><option key={k} value={k}>{metricLabel(k)}</option>)}
-                </select>
+                <MetricSelect value={metricB} onChange={setMetricB} keys={keys}
+                              labelFor={metricLabel} favourites={favouriteMetrics}
+                              onToggleFavourite={toggleFavouriteMetric} />
               </div>
             )}
             {mode==='crosscorr' && (
@@ -1631,6 +1849,25 @@ export default function CompareTab() {
                     <option value="repeat">repeat (palette)</option>
                     <option value="time">time gradient</option>
                   </select>
+                </div>
+                {/*
+                  Beside "Colour by", not buried in the legend section of Plot
+                  Settings — the need for it arises the moment you colour the
+                  runs, and that is here.
+                */}
+                <div>
+                  <label style={{ display:'block', fontSize:10, color:'var(--text-muted)', marginBottom:3, textTransform:'uppercase' }}>Legend</label>
+                  <label style={{ display:'flex', alignItems:'center', gap:6, fontSize:12,
+                                  height:24, color: style.showLegend ? 'var(--text-secondary)' : 'var(--text-muted)' }}
+                         title={style.showLegend
+                           ? 'List every replica in the legend, grouped under its condition'
+                           : 'The legend is switched off in Plot Settings'}>
+                    <input type="checkbox" checked={style.legendReplicas}
+                           disabled={!style.showLegend}
+                           onChange={e=>setStyle({ ...style, legendReplicas: e.target.checked })}
+                           style={{ accentColor:'var(--accent)' }} />
+                    name each repeat
+                  </label>
                 </div>
                 {model.filters.length > 0 && (
                   <div>
@@ -1708,9 +1945,9 @@ export default function CompareTab() {
               <div style={{ display:'flex', gap:10, alignItems:'flex-end', flexWrap:'wrap', marginBottom:10 }}>
                 <div>
                   <label style={{ display:'block', fontSize:10, color:'var(--text-muted)', marginBottom:3, textTransform:'uppercase' }}>Keep frames where</label>
-                  <select value={filterMetric} onChange={e=>setFilterMetric(e.target.value)} style={{ fontSize:12 }}>
-                    {keys.map(k=><option key={k} value={k}>{k}</option>)}
-                  </select>
+                  <MetricSelect value={filterMetric} onChange={setFilterMetric} keys={keys}
+                                labelFor={k=>k} favourites={favouriteMetrics}
+                                onToggleFavourite={toggleFavouriteMetric} />
                 </div>
                 <select value={filterOp} onChange={e=>setFilterOp(e.target.value as any)} style={{ fontSize:12 }}>
                   <option value=">">&gt;</option><option value="<">&lt;</option>
@@ -1731,9 +1968,9 @@ export default function CompareTab() {
                 {filterOutput==='conditional_mean' && (
                   <div>
                     <label style={{ display:'block', fontSize:10, color:'var(--text-muted)', marginBottom:3, textTransform:'uppercase' }}>Metric to average</label>
-                    <select value={targetMetric} onChange={e=>setTargetMetric(e.target.value)} style={{ fontSize:12 }}>
-                      {keys.map(k=><option key={k} value={k}>{k}</option>)}
-                    </select>
+                    <MetricSelect value={targetMetric} onChange={setTargetMetric} keys={keys}
+                                  labelFor={k=>k} favourites={favouriteMetrics}
+                                  onToggleFavourite={toggleFavouriteMetric} />
                   </div>
                 )}
                 <div>
@@ -1832,8 +2069,29 @@ export default function CompareTab() {
               </div>
             )}
 
-            <Plot key={theme} data={dataForMode} layout={lay} config={cfg} useResizeHandler style={{ width:'100%' }}
-                  onClick={openFrame} />
+            {/*
+              The axis panel sits BESIDE the plot, so `minWidth: 0` on the plot
+              half is load-bearing: a flex item defaults to its content's
+              min-width, and Plotly's SVG reports one wide enough to push the
+              panel off the edge instead of shrinking.
+            */}
+            <div style={{ display:'flex', gap:12, alignItems:'flex-start' }}>
+              <div style={{ flex:1, minWidth:0 }}>
+                <Plot key={theme} data={dataForMode} layout={lay} config={cfg} useResizeHandler style={{ width:'100%' }}
+                      onClick={openFrame} />
+              </div>
+              {mode==='together' && together.axisRows.length > 1 && (
+                <RepeatAxisPanel
+                  rows={together.axisRows}
+                  nRepeats={together.repeats.length}
+                  nConditions={together.conditions.length}
+                  yApplies={togetherLayout === 'stacked'}
+                  onChange={(key, patch) => key === '__x__'
+                    ? setRepeatXLock(patch)
+                    : setRepeatAxisLock(key, patch)}
+                />
+              )}
+            </div>
 
             {/* Statistics, only where they mean something.
                 A bar chart compares conditions across replicas, which is a
@@ -1869,6 +2127,8 @@ export default function CompareTab() {
               <RepeatDetailPanel
                 allKeys={keys.filter(k => (byKey[k]||[]).some((r:any)=>/time/i.test(r?.xlabel||'')))}
                 labelFor={metricLabel}
+                favourites={favouriteMetrics}
+                onToggleFavourite={toggleFavouriteMetric}
                 selected={togetherMetrics}
                 onSelect={setTogetherMetrics}
                 panels={together.panels}
@@ -1930,7 +2190,18 @@ export default function CompareTab() {
         </div>
       </div>
 
-      {/* Replica side panel */}
+      {/*
+        Hidden in Repeat detail, which picks ONE repeat from the dropdown above
+        the plot. The panel's job there was to control which replicas are drawn,
+        and in this mode exactly one is — so it was 230px of screen spent
+        restating the choice already made, directly at the expense of the time
+        axis beside it.
+
+        Its exclusions still apply: a replica banned in another mode stays out
+        of the repeat list and out of the locked axis extents. This only removes
+        the place to CHANGE that while in Repeat detail.
+      */}
+      {mode!=='together' && (
       <div style={{ width:230, background:'var(--bg-panel)', borderLeft:'1px solid var(--border)', overflow:'auto', flexShrink:0, padding:'16px 12px' }}>
         <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:10 }}>
           <h3>Replicas</h3>
@@ -1941,7 +2212,22 @@ export default function CompareTab() {
         </div>
         <div style={{ fontSize:10, color:'var(--text-muted)', marginBottom:12, lineHeight:1.5 }}>
           Click to highlight. Eye hides. Ban excludes from mean/SD (recomputes live).
+          {mode==='overlay' && <> The swatch sets that replica's line colour, overriding
+          the <strong>colour by</strong> rule.</>}
         </div>
+        {mode==='overlay' && Object.keys(repeatColours).length > 0 && (
+          <div style={{ fontSize:10, color:'var(--text-muted)', marginBottom:12,
+                        display:'flex', alignItems:'center', gap:6 }}>
+            {Object.keys(repeatColours).length} colour
+            {Object.keys(repeatColours).length === 1 ? '' : 's'} set by hand
+            <button onClick={clearRepeatColours} title="Return every replica to the colour-by rule"
+              style={{ padding:'1px 6px', borderRadius:4, fontSize:10,
+                       background:'var(--bg-elevated)', color:'var(--text-secondary)',
+                       border:'1px solid var(--border)', cursor:'pointer' }}>
+              reset all
+            </button>
+          </div>
+        )}
         {uniqMetrics.map(t => (
           <div key={t} style={{ marginBottom:14 }}>
             {uniqMetrics.length>1 && <div style={{ fontSize:10, color:'var(--text-muted)', textTransform:'uppercase', marginBottom:4 }}>{t}</div>}
@@ -1951,14 +2237,53 @@ export default function CompareTab() {
                   <span style={{ width:8, height:8, borderRadius:'50%', background:r.colour }} />
                   {r.condition_name}
                 </div>
-                {(r.replicas||[]).map(rep => {
+                {(r.replicas||[]).map((rep, ri) => {
                   const k = repKey(t,r.condition_id!,rep.index)
                   const ex = excluded.has(k), hid = hidden.has(k), hi = highlight===k
+                  /*
+                   * The swatch shows the EFFECTIVE colour, not the override.
+                   *
+                   * Showing only overrides would leave every swatch empty
+                   * until clicked, so the panel could not be used to read the
+                   * graph's colours — which is most of what it is for. It is
+                   * resolved exactly as the trace is, so the two cannot drift.
+                   */
+                  const ck = repeatColourKey(r.condition_id!, rep.index)
+                  const over = repeatColours[ck]
+                  const nReps = (r.replicas||[]).length
+                  const eff = replicaLineColour({
+                    override: over,
+                    conditionColour: resolveSeriesStyle(
+                      baseSeries(r.condition_id!), style, r.colour,
+                      (byKey[t]||[]).indexOf(r)).colour,
+                    mode: colorMode, repIndex: rep.index, repOrder: ri,
+                    total: nReps, tFrac: ri/Math.max(1, nReps-1),
+                  })
                   return (
                     <div key={k} style={{ display:'flex', alignItems:'center', gap:4, padding:'2px 4px', borderRadius:4,
                       background: hi?'var(--bg-hover)':'transparent', opacity: ex?0.4:1 }}>
+                      {/*
+                        Only in Overlay, which is the mode that draws one line
+                        per replica. Bars and the scatters colour by CONDITION,
+                        so a per-replica swatch there would be an affordance
+                        that silently does nothing.
+                      */}
+                      {mode==='overlay' && (
+                      <input type="color" value={toHexColour(eff)}
+                        onChange={e=>setRepeatColour(ck, e.target.value)}
+                        title={over ? `rep ${rep.index}: colour set by hand — use ✕ to go back to "${colorMode}"`
+                                    : `rep ${rep.index}: following "${colorMode}". Pick a colour to fix it.`}
+                        style={{ width:15, height:15, flexShrink:0, padding:0, cursor:'pointer',
+                          borderRadius:3, background:'transparent',
+                          border:`1px solid ${over?'var(--accent)':'var(--border)'}` }} />
+                      )}
                       <span onClick={()=>setHighlight(hi?null:k)} style={{ flex:1, fontSize:11, cursor:'pointer',
                         color: hi?'var(--accent-bright)':'var(--text-secondary)', textDecoration: ex?'line-through':'none' }}>rep {rep.index}</span>
+                      {mode==='overlay' && over && (
+                        <button onClick={()=>setRepeatColour(ck,'')} title="Back to the colour-by rule"
+                          style={{ padding:'0 2px', background:'transparent', color:'var(--text-muted)',
+                                   border:'none', cursor:'pointer', fontSize:11, lineHeight:1 }}>✕</button>
+                      )}
                       <button onClick={()=>toggle(hidden,setHidden,k)} title="Show/hide" style={{ padding:2, background:'transparent', color: hid?'var(--text-muted)':'var(--text-secondary)' }}>
                         {hid?<EyeOff size={11}/>:<Eye size={11}/>}
                       </button>
@@ -1973,6 +2298,7 @@ export default function CompareTab() {
           </div>
         ))}
       </div>
+      )}
     </div>
   )
 }

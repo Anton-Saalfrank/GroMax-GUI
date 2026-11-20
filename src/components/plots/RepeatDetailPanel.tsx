@@ -7,17 +7,23 @@
  * Without it the mode is four plots next to each other.
  */
 import React from 'react'
+import { Star } from 'lucide-react'
+import { groupMetricKeys } from '../../lib/analysisCategories'
 
 export interface PanelInfo { key: string; label: string; unit: string; colour: string }
 
 export function RepeatDetailPanel({
   allKeys, labelFor, selected, onSelect, panels, skipped,
   cursorNs, onCursor, span, valuesAt, onOpenStructure, repLabel,
+  favourites, onToggleFavourite,
 }: {
   allKeys: string[]
   labelFor: (k: string) => string
   selected: string[]
   onSelect: (keys: string[]) => void
+  /** Metric keys starred by the user; lifted into their own group. */
+  favourites: string[]
+  onToggleFavourite: (k: string) => void
   panels: PanelInfo[]
   skipped: string[]
   cursorNs: number | null
@@ -39,24 +45,80 @@ export function RepeatDetailPanel({
     fontWeight: active ? 600 : 400,
   })
 
+  /*
+   * The star and the label are SIBLING buttons inside one pill, not a button
+   * inside a button — the latter is invalid HTML and browsers resolve it by
+   * dropping one of the click targets, which is how you get a star that does
+   * nothing on one browser and selects the analysis on another.
+   */
+  const starBtn = (k: string) => {
+    const on = favourites.includes(k)
+    return (
+      <button
+        onClick={e => { e.stopPropagation(); onToggleFavourite(k) }}
+        title={on ? `Unstar ${labelFor(k)}` : `Star ${labelFor(k)} to keep it at the top`}
+        aria-pressed={on}
+        style={{
+          display: 'flex', alignItems: 'center', padding: '0 5px 0 2px',
+          background: 'transparent', border: 'none', cursor: 'pointer',
+          color: on ? 'var(--amber, #f7d24f)' : 'var(--text-muted)',
+          opacity: on ? 1 : 0.5,
+        }}>
+        <Star size={10} fill={on ? 'currentColor' : 'none'} />
+      </button>
+    )
+  }
+
+  const groups = groupMetricKeys(allKeys, favourites, labelFor)
+
   return (
     <div style={{ marginBottom: 12 }}>
       <div style={{ fontSize: 10, color: 'var(--text-muted)', marginBottom: 4,
                     textTransform: 'uppercase' }}>
         Analyses to stack
       </div>
-      <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 6 }}>
-        {allKeys.map(k => (
-          <button key={k} onClick={() => toggle(k)} style={chip(selected.includes(k))}>
-            {labelFor(k)}
-          </button>
-        ))}
-        {selected.length > 0 && (
+
+      {groups.map(g => (
+        <div key={g.id} style={{ display: 'flex', alignItems: 'baseline', gap: 8,
+                                 marginBottom: 5 }}>
+          <div style={{ fontSize: 10, color: 'var(--text-muted)', width: 112,
+                        flexShrink: 0, textAlign: 'right', paddingTop: 4 }}
+               title={g.label}>
+            {g.label}
+          </div>
+          <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+            {g.keys.map(k => {
+              const active = selected.includes(k)
+              return (
+                <span key={k} style={{
+                  display: 'inline-flex', alignItems: 'center',
+                  borderRadius: 5, overflow: 'hidden',
+                  background: active ? 'var(--accent)' : 'var(--bg-surface)',
+                  border: `1px solid ${active ? 'transparent' : 'var(--border)'}`,
+                }}>
+                  <button onClick={() => toggle(k)} style={{
+                    padding: '3px 4px 3px 9px', fontSize: 11, cursor: 'pointer',
+                    background: 'transparent', border: 'none',
+                    color: active ? '#fff' : 'var(--text-secondary)',
+                    fontWeight: active ? 600 : 400,
+                  }}>
+                    {labelFor(k)}
+                  </button>
+                  {starBtn(k)}
+                </span>
+              )
+            })}
+          </div>
+        </div>
+      ))}
+
+      {selected.length > 0 && (
+        <div style={{ marginBottom: 6 }}>
           <button onClick={() => onSelect([])} style={{ ...chip(false), opacity: 0.8 }}>
             clear
           </button>
-        )}
-      </div>
+        </div>
+      )}
 
       {selected.length === 0 && panels.length > 0 && (
         <div style={{ fontSize: 11, color: 'var(--text-muted)', marginBottom: 6 }}>
