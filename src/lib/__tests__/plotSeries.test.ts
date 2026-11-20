@@ -14,6 +14,7 @@ import {
   resolveSeriesStyle, seriesMarker, seriesMarkerArray, seriesBar, seriesBarArray,
   applyPalette,
   clearOverride, overriddenFields, seriesId, paletteColour,
+  replicaLineColour, repeatColourKey, toHexColour,
 } from '../plotSeries'
 import type { PlotSeries, SeriesStyle } from '../plotSeries'
 import { REPEAT_PALETTE, lighten } from '../stats'
@@ -178,6 +179,90 @@ console.log('\n6. series ids are stable and reconstructible')
   check('the same inputs give the same id twice',
         seriesId('f1', 'c9') === seriesId('f1', 'c9'))
 }
+
+/* ── Replica line colour ──────────────────────────────────────────────────
+ *
+ * The reported bug: line colour could not be set at all in Overlay, while
+ * dots and bars obeyed the controls. Two causes, and both are pinned here —
+ * the overlay never consulted the resolver (checked in CompareTab, not
+ * reachable from a unit test), and there was no per-replica colour to consult
+ * (checked below).
+ *
+ * The property that matters most is the PRECEDENCE: a colour picked by hand
+ * must win over every colour-by rule, including the time gradient, or the
+ * picker appears to work in two modes out of three.
+ */
+console.log('\nReplica line colour')
+
+const REP = { conditionColour: '#0072B2', repIndex: 3, repOrder: 2,
+              total: 5, tFrac: 0.5 }
+
+check('a key is condition|replica, and ignores the metric',
+  repeatColourKey('cond-A', 3) === 'cond-A|3')
+
+for (const mode of ['condition', 'repeat', 'time'] as const) {
+  check(`an explicit colour wins in '${mode}' mode`,
+    replicaLineColour({ ...REP, mode, override: '#ff0000' }) === '#ff0000')
+}
+
+check("'' is not an override",
+  replicaLineColour({ ...REP, mode: 'repeat', override: '' })
+  === replicaLineColour({ ...REP, mode: 'repeat' }))
+
+check("'repeat' mode gives replica n the same colour in every condition",
+  replicaLineColour({ ...REP, mode: 'repeat' })
+  === replicaLineColour({ ...REP, mode: 'repeat', conditionColour: '#D55E00',
+                          repOrder: 0, total: 9 }))
+
+check("'repeat' mode indexes the palette from replica 1",
+  replicaLineColour({ ...REP, mode: 'repeat', repIndex: 1 }) === paletteColour(0))
+
+check('a replica 0 does not wrap to the end of the palette',
+  replicaLineColour({ ...REP, mode: 'repeat', repIndex: 0 }) === paletteColour(0))
+
+check("'condition' mode keeps the condition's colour when there is one run",
+  replicaLineColour({ ...REP, mode: 'condition', total: 1, repOrder: 0 })
+  === '#0072B2')
+
+{
+  const shades = [0, 1, 2, 3].map(i =>
+    replicaLineColour({ ...REP, mode: 'condition', repOrder: i, total: 4 }))
+  check("'condition' mode gives each run a distinct shade",
+    new Set(shades).size === 4, shades.join(' '))
+  // Case-insensitive: lighten() re-serialises the hex, so an amount of 0 is
+  // the same colour in lower case rather than the identical string.
+  check("the first run is the condition's own colour",
+    shades[0].toLowerCase() === '#0072b2', shades[0])
+}
+
+{
+  const a = replicaLineColour({ ...REP, mode: 'time', tFrac: 0 })
+  const b = replicaLineColour({ ...REP, mode: 'time', tFrac: 1 })
+  check("'time' mode fades across the trajectory", a !== b, `${a} -> ${b}`)
+  check('a tFrac outside 0..1 is clamped, not emitted raw',
+    replicaLineColour({ ...REP, mode: 'time', tFrac: 4 }) === b
+    && replicaLineColour({ ...REP, mode: 'time', tFrac: -2 }) === a)
+  check('a NaN tFrac does not produce "rgba(...,NaN)"',
+    !/NaN/.test(replicaLineColour({ ...REP, mode: 'time', tFrac: NaN })))
+}
+
+/* toHexColour feeds <input type="color">, which silently renders anything it
+ * cannot parse as black — so a swatch would lie rather than fail. */
+console.log('\nColour coercion for the swatch')
+check('hex passes through, lower-cased', toHexColour('#A1B2C3') === '#a1b2c3')
+check('short hex expands', toHexColour('#0bc') === '#00bbcc')
+check('rgb() converts', toHexColour('rgb(255, 0, 128)') === '#ff0080')
+check('rgba() converts and drops alpha',
+  toHexColour('rgba(79,142,247,0.3)') === '#4f8ef7')
+check('the time gradient is representable as a swatch',
+  /^#[0-9a-f]{6}$/.test(toHexColour(
+    replicaLineColour({ ...REP, mode: 'time', tFrac: 0.42 }))))
+check('junk falls back rather than silently going black',
+  toHexColour('not a colour') === '#4f8ef7'
+  && toHexColour('') === '#4f8ef7')
+check('every output is a valid 7-char hex',
+  ['#fff', 'rgb(1,2,3)', 'rgba(0,0,0,0)', 'chartreuse', '#123456']
+    .every(c => /^#[0-9a-f]{6}$/.test(toHexColour(c))))
 
 console.log(fails === 0 ? '\nALL PASS' : `\n${fails} FAILED`)
 process.exit(fails ? 1 : 0)

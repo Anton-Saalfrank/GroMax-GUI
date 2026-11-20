@@ -194,6 +194,24 @@ node /tmp/gromax_rownorm.mjs > /tmp/gromax_rownorm.log 2>&1 \
   || { cat /tmp/gromax_rownorm.log; exit 1; }
 tail -1 /tmp/gromax_rownorm.log
 
+echo "→ Axis frame, ticks and gridlines"
+./node_modules/.bin/esbuild src/lib/__tests__/axisDecor.test.ts --bundle \
+  --platform=node --format=esm --outfile=/tmp/gromax_axisdecor.mjs \
+  --log-level=warning > /dev/null 2>&1 \
+  || { echo "  esbuild failed"; exit 1; }
+node /tmp/gromax_axisdecor.mjs > /tmp/gromax_axisdecor.log 2>&1 \
+  || { cat /tmp/gromax_axisdecor.log; exit 1; }
+tail -1 /tmp/gromax_axisdecor.log
+
+echo "→ Axis locking, metric grouping and panel geometry"
+./node_modules/.bin/esbuild src/lib/__tests__/axisLock.test.ts --bundle \
+  --platform=node --format=esm --outfile=/tmp/gromax_axislock.mjs \
+  --log-level=warning > /dev/null 2>&1 \
+  || { echo "  esbuild failed"; exit 1; }
+node /tmp/gromax_axislock.mjs > /tmp/gromax_axislock.log 2>&1 \
+  || { cat /tmp/gromax_axislock.log; exit 1; }
+tail -1 /tmp/gromax_axislock.log
+
 echo "→ Snapshot list ordering"
 ./node_modules/.bin/esbuild src/lib/__tests__/snapshotGroups.test.ts --bundle \
   --platform=node --format=esm --outfile=/tmp/gromax_snapgroups.mjs \

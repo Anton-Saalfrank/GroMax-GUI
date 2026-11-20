@@ -7,6 +7,8 @@ import type {
   DisplayFilters, Rep, ColorScheme, PickMode, InteractionMode, SelectionLevel,
 } from '../lib/nglSelection'
 import type { FilterDef, SeriesStyle } from '../lib/plotSeries'
+import type { AxisLock } from '../lib/axisLock'
+import { DEFAULT_AXIS_LOCK, normaliseAxisLock } from '../lib/axisLock'
 import { api, RequestSlot, isSuperseded } from '../api/client'
 
 type View = 'home' | 'project'
@@ -229,6 +231,44 @@ interface AppStore {
   clearSeriesStyleField: (field: keyof SeriesStyle) => void
   resetSeriesStyle: (seriesId: string) => void
 
+  /**
+   * Starred analyses, by metric key, lifted to the top of every metric menu.
+   *
+   * Project state for the same reason as the filters above: a key like
+   * `mindist · Y269 to loop` names a run that exists in this project only.
+   * Starring by analysis TYPE would travel between projects but is not what
+   * anyone wants — the thing you return to twenty times a day is one specific
+   * named run, not every mindist you will ever compute.
+   */
+  favouriteMetrics: string[]
+  toggleFavouriteMetric: (key: string) => void
+
+  /**
+   * Line colour per replica, keyed by `repeatColourKey(conditionId, repIndex)`.
+   *
+   * Project state: a condition id means nothing elsewhere. Separate from
+   * `plotSeriesStyles` on purpose — that is keyed by filter x condition and a
+   * replica is neither, so folding replicas in would make "clear this field on
+   * every series" either skip them or wipe them, and both are wrong.
+   */
+  repeatColours: Record<string, string>
+  /** '' clears the override and returns the replica to its colour-by mode. */
+  setRepeatColour: (key: string, colour: string) => void
+  clearRepeatColours: () => void
+
+  /**
+   * Per-analysis axis locking for Repeat detail, keyed by metric key.
+   *
+   * Absent means `DEFAULT_AXIS_LOCK`, so this stays empty until someone
+   * deviates from it rather than filling up with a row per analysis the moment
+   * the tab is opened.
+   */
+  repeatAxisLocks: Record<string, AxisLock>
+  setRepeatAxisLock: (key: string, patch: Partial<AxisLock>) => void
+  /** The shared time axis. One setting, because all panels share the x axis. */
+  repeatXLock: AxisLock
+  setRepeatXLock: (patch: Partial<AxisLock>) => void
+
   /** Write the per-project UI state back, debounced. */
   saveWorkspace: () => void
   /** Write it back now — used when the window is closing. */
@@ -293,6 +333,10 @@ function freshStructureState() {
     analysisDraft: {} as Record<string, any>,
     plotFilters: [] as FilterDef[],
     plotSeriesStyles: {} as Record<string, SeriesStyle>,
+    favouriteMetrics: [] as string[],
+    repeatColours: {} as Record<string, string>,
+    repeatAxisLocks: {} as Record<string, AxisLock>,
+    repeatXLock: DEFAULT_AXIS_LOCK as AxisLock,
   }
 }
 
@@ -351,6 +395,25 @@ function restoreStructureState(session: SessionState) {
     plotSeriesStyles: (w.plotSeriesStyles && typeof w.plotSeriesStyles === 'object'
                        && !Array.isArray(w.plotSeriesStyles))
       ? w.plotSeriesStyles as Record<string, SeriesStyle> : {},
+    /*
+     * Stars for analyses that may no longer exist are kept, not pruned.
+     *
+     * A deleted-and-recomputed result comes back under the same metric key, and
+     * silently unstarring it in between would make the star feel unreliable in
+     * exactly the situation where someone is iterating on one analysis. An
+     * orphaned key is invisible anyway: the menus only ever show keys that are
+     * in `byKey` right now.
+     */
+    favouriteMetrics: arr(w.favouriteMetrics).filter((k: any) => typeof k === 'string'),
+    repeatColours: Object.fromEntries(
+      Object.entries((w.repeatColours && typeof w.repeatColours === 'object'
+                      && !Array.isArray(w.repeatColours)) ? w.repeatColours : {})
+            .filter(([, v]) => typeof v === 'string' && v !== '')) as Record<string, string>,
+    repeatAxisLocks: Object.fromEntries(
+      Object.entries((w.repeatAxisLocks && typeof w.repeatAxisLocks === 'object'
+                      && !Array.isArray(w.repeatAxisLocks)) ? w.repeatAxisLocks : {})
+            .map(([k, v]) => [k, normaliseAxisLock(v)])) as Record<string, AxisLock>,
+    repeatXLock: normaliseAxisLock(w.repeatXLock),
   }
 }
 
@@ -429,6 +492,42 @@ export const useStore = create<AppStore>((set, get) => ({
       Object.entries(st.plotSeriesStyles).filter(([k]) => k !== seriesId)),
   })); get().saveWorkspace() },
 
+  favouriteMetrics: [],
+  toggleFavouriteMetric: (key) => { set(st => ({
+    favouriteMetrics: st.favouriteMetrics.includes(key)
+      ? st.favouriteMetrics.filter(k => k !== key)
+      : [...st.favouriteMetrics, key],
+  })); get().saveWorkspace() },
+
+  repeatColours: {},
+  /*
+   * Clearing REMOVES the key rather than storing ''. Dead keys would otherwise
+   * accumulate in the workspace for every colour ever tried and undone.
+   */
+  setRepeatColour: (key, colour) => { set(st => {
+    const next = { ...st.repeatColours }
+    if (colour) next[key] = colour; else delete next[key]
+    return { repeatColours: next }
+  }); get().saveWorkspace() },
+  clearRepeatColours: () => { set({ repeatColours: {} }); get().saveWorkspace() },
+
+  repeatAxisLocks: {},
+  /*
+   * Merged into whatever is there, so switching to 'auto' and back does not
+   * lose the bounds that were typed in 'manual'. Returning to a mode and
+   * finding the numbers gone is how a settings panel teaches people not to
+   * explore it.
+   */
+  setRepeatAxisLock: (key, patch) => { set(st => ({
+    repeatAxisLocks: { ...st.repeatAxisLocks,
+      [key]: { ...DEFAULT_AXIS_LOCK, ...(st.repeatAxisLocks[key] || {}), ...patch } },
+  })); get().saveWorkspace() },
+
+  repeatXLock: DEFAULT_AXIS_LOCK,
+  setRepeatXLock: (patch) => { set(st => ({
+    repeatXLock: { ...st.repeatXLock, ...patch },
+  })); get().saveWorkspace() },
+
   structureLayers: [],
   addStructureLayer: (l) => { set(st => ({
     structureLayers: [...st.structureLayers, l],
@@ -468,6 +567,10 @@ export const useStore = create<AppStore>((set, get) => ({
         analysisDraft: st.analysisDraft,
         plotFilters: st.plotFilters,
         plotSeriesStyles: st.plotSeriesStyles,
+        favouriteMetrics: st.favouriteMetrics,
+        repeatColours: st.repeatColours,
+        repeatAxisLocks: st.repeatAxisLocks,
+        repeatXLock: st.repeatXLock,
       }).catch(() => { /* a lost layout is not worth interrupting anyone for */ })
     }, WORKSPACE_SAVE_DELAY)
   },
@@ -485,6 +588,10 @@ export const useStore = create<AppStore>((set, get) => ({
       analysisDraft: st.analysisDraft,
       plotFilters: st.plotFilters,
       plotSeriesStyles: st.plotSeriesStyles,
+      favouriteMetrics: st.favouriteMetrics,
+      repeatColours: st.repeatColours,
+      repeatAxisLocks: st.repeatAxisLocks,
+      repeatXLock: st.repeatXLock,
     }).then(() => {}).catch(() => {})
   },
 

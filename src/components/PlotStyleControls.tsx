@@ -55,6 +55,124 @@ export interface PlotStyle {
   errorBarWidth: number
   errorCapSize: number
   showLegend: boolean
+  /**
+   * Where the legend sits. See LEGEND_POSITIONS for what each one means.
+   *
+   * It used to be pinned inside the plot at the top right, which on a stacked
+   * repeat-detail figure lands squarely on the first panel — the one with the
+   * longest trace names, so the box is at its widest exactly where it does the
+   * most damage. Every position here except the 'inside' ones puts it outside
+   * the drawing area instead.
+   */
+  legendPos: LegendPos
+  /**
+   * Name each individual replica in the legend, not just the conditions.
+   *
+   * Off by default: ten runs per condition is twenty entries, which is a
+   * legend taller than the plot. It becomes necessary the moment replicas are
+   * coloured by hand or by the repeat palette, because then the colours carry
+   * information with nothing to decode them.
+   */
+  legendReplicas: boolean
+
+  // ── Axis frame, ticks and grid ──────────────────────────────────────────
+  /** The spine along the axis itself. */
+  showAxisLine: boolean
+  axisLineWidth: number
+  /** '' follows the font colour. */
+  axisLineColor: string
+  /** Draw the opposite spines too, closing the plot into a box. */
+  axisMirror: boolean
+  tickMarks: 'outside' | 'inside' | 'none'
+  tickLen: number
+  tickWidth: number
+  /** '' follows the axis line colour. */
+  tickColor: string
+
+  gridWidth: number
+  gridDash: GridDash
+  /**
+   * Minor gridlines, between the labelled ones.
+   *
+   * Plotly calls these `minor` and they are off by default, which is why a
+   * grid can look irregular: the only extra line drawn was the ZERO LINE,
+   * which sits at zero rather than on the tick lattice and is drawn on top of
+   * whatever is already there. See showZeroLine.
+   */
+  showMinorGrid: boolean
+  /** '' follows the major grid colour. */
+  minorGridColor: string
+  minorGridWidth: number
+  minorGridDash: GridDash
+  minorTickMarks: boolean
+  /** How many minor intervals Plotly may fit between major ticks. */
+  minorPerMajor: number
+
+  /**
+   * The line at zero, drawn IN ADDITION to any gridline in the same place.
+   *
+   * That doubling is why one line can look thicker than its neighbours while
+   * not sitting on the same spacing as them — two 1px strokes land on the same
+   * pixel at zero, and zero is only on the tick lattice by luck. It is exposed
+   * here so it can be turned off, thinned, or deliberately made distinct.
+   */
+  showZeroLine: boolean
+  zeroLineWidth: number
+  /** '' follows the major grid colour. */
+  zeroLineColor: string
+}
+
+export type GridDash = 'solid' | 'dot' | 'dash' | 'longdash' | 'dashdot'
+
+export const GRID_DASHES: GridDash[] = ['solid', 'dot', 'dash', 'longdash', 'dashdot']
+
+export type LegendPos =
+  | 'inside-tr' | 'inside-tl' | 'inside-br' | 'inside-bl'
+  | 'right' | 'top' | 'bottom'
+
+/**
+ * Plotly legend placement per position.
+ *
+ * `x`/`y` are in paper coordinates, so values outside 0–1 are outside the
+ * plotting area. The horizontal variants also set `orientation: 'h'`, which is
+ * what makes a legend above or below the figure one line instead of a tall
+ * column that stretches the whole thing.
+ */
+export const LEGEND_POSITIONS: { value: LegendPos; label: string; layout: any }[] = [
+  { value: 'right',     label: 'Right, outside',
+    layout: { x: 1.02, xanchor: 'left', y: 1, yanchor: 'top' } },
+  { value: 'top',       label: 'Above, horizontal',
+    layout: { orientation: 'h', x: 0, xanchor: 'left', y: 1.06, yanchor: 'bottom' } },
+  { value: 'bottom',    label: 'Below, horizontal',
+    layout: { orientation: 'h', x: 0, xanchor: 'left', y: -0.16, yanchor: 'top' } },
+  { value: 'inside-tr', label: 'Inside, top right',
+    layout: { x: 1, xanchor: 'right', y: 1, yanchor: 'top' } },
+  { value: 'inside-tl', label: 'Inside, top left',
+    layout: { x: 0, xanchor: 'left', y: 1, yanchor: 'top' } },
+  { value: 'inside-br', label: 'Inside, bottom right',
+    layout: { x: 1, xanchor: 'right', y: 0, yanchor: 'bottom' } },
+  { value: 'inside-bl', label: 'Inside, bottom left',
+    layout: { x: 0, xanchor: 'left', y: 0, yanchor: 'bottom' } },
+]
+
+const LEGEND_BY_POS: Record<string, any> = Object.fromEntries(
+  LEGEND_POSITIONS.map(p => [p.value, p.layout]))
+
+/**
+ * Room for the legend, because Plotly will not make it.
+ *
+ * A legend's x/y are in paper coordinates relative to the PLOTTING AREA, so
+ * `x: 1.02` puts it just outside that area — and straight off the edge of the
+ * figure if the right margin is still 20 px. There is no `automargin` for
+ * legends, so the gutter it needs has to be reserved here. Getting this wrong
+ * does not warn; it silently clips the legend.
+ */
+export function legendMargin(s: PlotStyle, base: { l: number; r: number; t: number; b: number }) {
+  if (!s.showLegend) return base
+  if (s.legendPos === 'right')  return { ...base, r: Math.max(base.r, 132) }
+  if (s.legendPos === 'bottom') return { ...base, b: base.b + 46 }
+  if (s.legendPos === 'top')    return { ...base, t: base.t + 34 }
+  return base
 }
 
 /** Marker shapes worth offering — Plotly names, with readable labels. */
@@ -131,6 +249,46 @@ export function defaultPlotStyle(): PlotStyle {
     errorBarWidth: 1.5,
     errorCapSize: 5,
     showLegend: true,
+    /*
+     * Outside on the right by default, not inside at the top.
+     *
+     * Inside is the tidier figure when there is room for it and an obstruction
+     * when there is not, and nothing about a plot tells you in advance which
+     * you have. Outside is never wrong, only occasionally less pretty, and the
+     * four inside positions are one click away.
+     */
+    legendPos: 'right',
+    legendReplicas: false,
+
+    /*
+     * The frame and ticks are ON by default.
+     *
+     * A plot whose data area is bounded only by gridlines has no stated
+     * extent: the reader cannot see where the axis ends, and a point near the
+     * edge may be at the limit or far past it. Journals ask for the spine and
+     * ticks for that reason, and nothing was drawing them.
+     */
+    showAxisLine: true,
+    axisLineWidth: 1,
+    axisLineColor: '',
+    axisMirror: false,
+    tickMarks: 'outside',
+    tickLen: 4,
+    tickWidth: 1,
+    tickColor: '',
+
+    gridWidth: 1,
+    gridDash: 'solid',
+    showMinorGrid: false,
+    minorGridColor: '',
+    minorGridWidth: 0.5,
+    minorGridDash: 'dot',
+    minorTickMarks: false,
+    minorPerMajor: 5,
+
+    showZeroLine: true,
+    zeroLineWidth: 1,
+    zeroLineColor: '',
   }
 }
 
@@ -146,6 +304,59 @@ export function normalisePlotStyle(raw: any): PlotStyle {
 }
 
 /**
+ * Every axis property that comes from the figure style.
+ *
+ * ONE function, used by styledLayout for the ordinary x/y pair and by the
+ * stacked repeat-detail panels, which build their own axes. Those panels had
+ * already drifted — they set `showgrid`, `gridcolor` and `zerolinecolor` and
+ * knew nothing about widths, ticks or the frame — and this file's own header
+ * is about what happens when two sites decide one visual property.
+ *
+ * Spread it into an axis object, then add `title`, `range`, `domain` and
+ * anything else specific to that axis.
+ */
+export function axisDecor(s: PlotStyle) {
+  const line = s.axisLineColor || s.fontColor
+  const tickC = s.tickColor || line
+  // Plotly spells "no tick marks" as an empty string, not a keyword.
+  const ticks = s.tickMarks === 'none' ? '' : s.tickMarks
+  return {
+    showline: s.showAxisLine,
+    linewidth: s.axisLineWidth,
+    linecolor: line,
+    mirror: s.axisMirror,
+
+    ticks,
+    ticklen: s.tickLen,
+    tickwidth: s.tickWidth,
+    tickcolor: tickC,
+
+    showgrid: s.showGrid,
+    gridcolor: s.gridColor,
+    gridwidth: s.gridWidth,
+    griddash: s.gridDash,
+
+    zeroline: s.showZeroLine,
+    zerolinewidth: s.zeroLineWidth,
+    zerolinecolor: s.zeroLineColor || s.gridColor,
+
+    minor: {
+      showgrid: s.showMinorGrid,
+      gridcolor: s.minorGridColor || s.gridColor,
+      gridwidth: s.minorGridWidth,
+      griddash: s.minorGridDash,
+      // Minor marks follow the major direction; 'outside' when the majors are
+      // off, since asking for minor ticks and getting none would be silent.
+      ticks: s.minorTickMarks ? (ticks || 'outside') : '',
+      ticklen: Math.max(2, s.tickLen * 0.6),
+      tickwidth: s.tickWidth,
+      tickcolor: tickC,
+      nticks: s.minorPerMajor,
+    },
+  }
+}
+
+/**
  * Build the Plotly layout for a styled plot. Kept here next to the controls so
  * the mapping from style -> layout lives in one place.
  */
@@ -154,23 +365,26 @@ export function styledLayout(s: PlotStyle, defX: string, defY: string, extra: an
   const style = s.fontItalic ? 'italic' : 'normal'
   return {
     autosize: true, height: 480,
-    margin: { l: 60, r: 20, t: s.title ? 40 : 30, b: 50 },
+    margin: legendMargin(s, { l: 60, r: 20, t: s.title ? 40 : 30, b: 50 }),
     paper_bgcolor: s.paperBg || 'rgba(0,0,0,0)',
     plot_bgcolor: s.plotBg || 'rgba(0,0,0,0)',
     font: { color: s.fontColor, family: s.fontFamily, size: s.fontSize, weight, style },
     title: s.title ? { text: s.title, font: { color: s.fontColor, size: s.fontSize + 3, weight, style } } : undefined,
     xaxis: {
-      title: { text: s.xlabel || defX }, showgrid: s.showGrid,
-      gridcolor: s.gridColor, zerolinecolor: s.gridColor,
+      ...axisDecor(s),
+      title: { text: s.xlabel || defX },
       range: (s.xmin && s.xmax) ? [+s.xmin, +s.xmax] : undefined,
     },
     yaxis: {
-      title: { text: s.ylabel || defY }, showgrid: s.showGrid,
-      gridcolor: s.gridColor, zerolinecolor: s.gridColor,
+      ...axisDecor(s),
+      title: { text: s.ylabel || defY },
       range: (s.ymin && s.ymax) ? [+s.ymin, +s.ymax] : undefined,
     },
     showlegend: s.showLegend,
-    legend: { bgcolor: 'rgba(0,0,0,0)', bordercolor: s.gridColor, borderwidth: 1, x: 1, xanchor: 'right', y: 1 },
+    legend: {
+      bgcolor: 'rgba(0,0,0,0)', bordercolor: s.gridColor, borderwidth: 1,
+      ...(LEGEND_BY_POS[s.legendPos] || LEGEND_BY_POS.right),
+    },
     hovermode: 'closest', barmode: 'group', scattermode: 'group',
     ...extra,
   }
@@ -447,8 +661,151 @@ export default function PlotStyleControls({ style, onChange, open, onToggle, ser
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 10, marginBottom: 16 }}>
             <Field label="Plot background"><ColorInput value={style.plotBg} onChange={v => set('plotBg', v)} placeholder="transparent" /></Field>
             <Field label="Outer background"><ColorInput value={style.paperBg} onChange={v => set('paperBg', v)} placeholder="transparent" /></Field>
-            <Field label="Gridline colour"><ColorInput value={style.gridColor} onChange={v => set('gridColor', v)} /></Field>
             <Field label="Mean line colour"><ColorInput value={style.meanColor} onChange={v => set('meanColor', v)} placeholder="per condition" /></Field>
+          </div>
+
+          <div style={sectionLabel}>Axis frame &amp; ticks</div>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 10, marginBottom: 16 }}>
+            <Field label="Axis line">
+              <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 11 }}>
+                <input type="checkbox" checked={style.showAxisLine}
+                       onChange={e => set('showAxisLine', e.target.checked)}
+                       style={{ accentColor: 'var(--accent)' }} />
+                show
+              </label>
+            </Field>
+            <Field label="Axis line width">
+              <input type="number" value={style.axisLineWidth} min={0} max={6} step={0.5}
+                     disabled={!style.showAxisLine}
+                     onChange={e => set('axisLineWidth', Math.max(0, +e.target.value || 0))}
+                     style={inp} />
+            </Field>
+            <Field label="Axis line colour">
+              <ColorInput value={style.axisLineColor}
+                          onChange={v => set('axisLineColor', v)} placeholder="text colour" />
+            </Field>
+            <Field label="Box (all four sides)">
+              <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 11 }}>
+                <input type="checkbox" checked={style.axisMirror}
+                       onChange={e => set('axisMirror', e.target.checked)}
+                       style={{ accentColor: 'var(--accent)' }} />
+                mirror
+              </label>
+            </Field>
+            <Field label="Tick marks">
+              <select value={style.tickMarks} onChange={e => set('tickMarks', e.target.value as any)}
+                      style={{ ...inp, padding: '3px 4px' }}>
+                <option value="outside">outside</option>
+                <option value="inside">inside</option>
+                <option value="none">none</option>
+              </select>
+            </Field>
+            <Field label="Tick length">
+              <input type="number" value={style.tickLen} min={0} max={20} step={1}
+                     disabled={style.tickMarks === 'none'}
+                     onChange={e => set('tickLen', Math.max(0, +e.target.value || 0))} style={inp} />
+            </Field>
+            <Field label="Tick width">
+              <input type="number" value={style.tickWidth} min={0} max={6} step={0.5}
+                     disabled={style.tickMarks === 'none'}
+                     onChange={e => set('tickWidth', Math.max(0, +e.target.value || 0))} style={inp} />
+            </Field>
+            <Field label="Tick colour">
+              <ColorInput value={style.tickColor} onChange={v => set('tickColor', v)}
+                          placeholder="axis line colour" />
+            </Field>
+          </div>
+
+          <div style={sectionLabel}>Gridlines</div>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 10, marginBottom: 6 }}>
+            <Field label="Major gridlines">
+              <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 11 }}>
+                <input type="checkbox" checked={style.showGrid}
+                       onChange={e => set('showGrid', e.target.checked)}
+                       style={{ accentColor: 'var(--accent)' }} />
+                show
+              </label>
+            </Field>
+            <Field label="Major width">
+              <input type="number" value={style.gridWidth} min={0} max={6} step={0.25}
+                     disabled={!style.showGrid}
+                     onChange={e => set('gridWidth', Math.max(0, +e.target.value || 0))} style={inp} />
+            </Field>
+            <Field label="Major style">
+              <select value={style.gridDash} disabled={!style.showGrid}
+                      onChange={e => set('gridDash', e.target.value as GridDash)}
+                      style={{ ...inp, padding: '3px 4px' }}>
+                {GRID_DASHES.map(d => <option key={d} value={d}>{d}</option>)}
+              </select>
+            </Field>
+            <Field label="Major colour">
+              <ColorInput value={style.gridColor} onChange={v => set('gridColor', v)} />
+            </Field>
+
+            <Field label="Minor gridlines">
+              <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 11 }}>
+                <input type="checkbox" checked={style.showMinorGrid}
+                       onChange={e => set('showMinorGrid', e.target.checked)}
+                       style={{ accentColor: 'var(--accent)' }} />
+                show
+              </label>
+            </Field>
+            <Field label="Minor width">
+              <input type="number" value={style.minorGridWidth} min={0} max={6} step={0.25}
+                     disabled={!style.showMinorGrid}
+                     onChange={e => set('minorGridWidth', Math.max(0, +e.target.value || 0))} style={inp} />
+            </Field>
+            <Field label="Minor style">
+              <select value={style.minorGridDash} disabled={!style.showMinorGrid}
+                      onChange={e => set('minorGridDash', e.target.value as GridDash)}
+                      style={{ ...inp, padding: '3px 4px' }}>
+                {GRID_DASHES.map(d => <option key={d} value={d}>{d}</option>)}
+              </select>
+            </Field>
+            <Field label="Minor colour">
+              <ColorInput value={style.minorGridColor} onChange={v => set('minorGridColor', v)}
+                          placeholder="major grid colour" />
+            </Field>
+
+            <Field label="Minor divisions">
+              <input type="number" value={style.minorPerMajor} min={0} max={20} step={1}
+                     disabled={!style.showMinorGrid && !style.minorTickMarks}
+                     onChange={e => set('minorPerMajor', Math.max(0, Math.round(+e.target.value || 0)))}
+                     style={inp} />
+            </Field>
+            <Field label="Minor tick marks">
+              <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 11 }}>
+                <input type="checkbox" checked={style.minorTickMarks}
+                       onChange={e => set('minorTickMarks', e.target.checked)}
+                       style={{ accentColor: 'var(--accent)' }} />
+                show
+              </label>
+            </Field>
+            <Field label="Zero line">
+              <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 11 }}>
+                <input type="checkbox" checked={style.showZeroLine}
+                       onChange={e => set('showZeroLine', e.target.checked)}
+                       style={{ accentColor: 'var(--accent)' }} />
+                show
+              </label>
+            </Field>
+            <Field label="Zero line width">
+              <input type="number" value={style.zeroLineWidth} min={0} max={6} step={0.5}
+                     disabled={!style.showZeroLine}
+                     onChange={e => set('zeroLineWidth', Math.max(0, +e.target.value || 0))} style={inp} />
+            </Field>
+            <Field label="Zero line colour">
+              <ColorInput value={style.zeroLineColor} onChange={v => set('zeroLineColor', v)}
+                          placeholder="major grid colour" />
+            </Field>
+          </div>
+          <div style={{ fontSize: 10, color: 'var(--text-muted)', marginBottom: 16,
+                        lineHeight: 1.5 }}>
+            A gridline that looks thicker than its neighbours, and off the
+            spacing of the rest, is usually the <strong>zero line</strong>: it is
+            drawn on top of whatever is already at zero, and zero only falls on
+            the tick lattice by chance. Turn it off, or give it its own colour,
+            to see which lines are really the grid.
           </div>
 
           {/* ── Which series the appearance controls below apply to ───── */}
@@ -484,23 +841,42 @@ export default function PlotStyleControls({ style, onChange, open, onToggle, ser
             </div>
           )}
 
-          <div style={sectionLabel}>Markers (dots)</div>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 10, marginBottom: 16 }}>
-            {editing && (
-              <>
+          {/*
+            SERIES COLOUR HAS ITS OWN SECTION, and no longer sits under
+            "Markers (dots)".
+            It drives the line, the bar, the mean±SD band and the dots — but
+            filed under Markers it read as a dot setting, so it was reasonable
+            to conclude that lines simply could not be coloured. (They could
+            not, in Overlay, for a different reason: those traces never called
+            the resolver at all. Both halves of that are fixed.)
+          */}
+          {editing && (
+            <>
+              <div style={sectionLabel}>Colour of this series</div>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 10, marginBottom: 6 }}>
                 {sField('Series colour', 'colour', <>                  <ColorInput value={ov.colour || ''} onChange={v => sset('colour', v)}
                               placeholder="condition colour" />
                 </>)}
                 {/*
-                  * REQUEST (3) LIVES HERE. The dots follow the series colour
-                  * unless this is set, so a bar and its replica dots match by
-                  * default and can still be separated on purpose.
+                  * The dots follow the series colour unless this is set, so a
+                  * bar and its replica dots match by default and can still be
+                  * separated on purpose.
                   */}
                 {sField('Dot colour', 'dotColour', <>                  <ColorInput value={ov.dotColour || ''} onChange={v => sset('dotColour', v)}
                               placeholder="series colour" />
                 </>)}
-              </>
-            )}
+              </div>
+              <div style={{ fontSize: 10, color: 'var(--text-muted)', marginBottom: 16,
+                            lineHeight: 1.5 }}>
+                Applies to this condition's line, bar, mean±SD band and dots.
+                To colour <em>individual replicas</em> in Overlay, use the
+                swatches in the Replicas panel on the right.
+              </div>
+            </>
+          )}
+
+          <div style={sectionLabel}>Markers (dots)</div>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 10, marginBottom: 16 }}>
             {sField('Shape', 'markerSymbol', <>              <select value={sval('markerSymbol')} onChange={e => sset('markerSymbol', e.target.value)}
                       style={{ ...inp, padding: '3px 4px' }}>
                 {MARKER_SYMBOLS.map(m => <option key={m.value} value={m.value}>{m.label}</option>)}
@@ -570,6 +946,28 @@ export default function PlotStyleControls({ style, onChange, open, onToggle, ser
                        style={{ accentColor: 'var(--accent)' }} />
                 show
               </label>
+            </Field>
+            <Field label="Legend position">
+              <select value={style.legendPos} disabled={!style.showLegend}
+                      onChange={e => set('legendPos', e.target.value as LegendPos)}
+                      style={{ ...inp, padding: '3px 4px',
+                               opacity: style.showLegend ? 1 : 0.5 }}>
+                {LEGEND_POSITIONS.map(o => (
+                  <option key={o.value} value={o.value}>{o.label}</option>
+                ))}
+              </select>
+            </Field>
+            {/*
+              A POINTER, not a second control. "Name each repeat" writes
+              style.legendReplicas and lives beside "Colour by" in Overlay,
+              where the need for it arises; two controls for one field is how
+              a setting becomes impossible to find again.
+            */}
+            <Field label="Individual repeats">
+              <div style={{ fontSize: 10, color: 'var(--text-muted)', lineHeight: 1.4 }}>
+                Listing each replica is <strong>name each repeat</strong>, next to
+                Colour by in Overlay.
+              </div>
             </Field>
           </div>
 
